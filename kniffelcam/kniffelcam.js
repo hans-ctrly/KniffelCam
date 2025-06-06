@@ -20,14 +20,17 @@ function initApp() {
   const switchBtn = document.getElementById('switchCamera');
   const cardWidth = 950, cardHeight = 1400;
 
-  // Define the Kniffe score sheet based on measured values
+  // Define the Kniffel score sheet based on measured values
   const cellHeight = cardHeight * 0.0357;
   const cellWidth = cardWidth * 0.10526
-  const offsetUpperBlock = cardHeight * 0.21429;
-  const offsetLowerBlock = cardHeight * 0.12857;
-  const offsetLeft = 0.32632 * cardWidth;
+  const offsetUpperBlock = cardHeight * 0.23;
+  const offsetLowerBlock = cardHeight * 0.13;
+  const offsetLeft = 0.327 * cardWidth;
   const players = 1; //Number of player columns per scorecard
-  
+  //Extra size of each cell allow for inaccuracies in the warped image
+  const cellPaddingX = .015; 
+  const cellPaddingY = .15;
+
   const scoreFields = [
     {name: "Einser", upper: true},
     {name: "Zweier", upper: true},
@@ -46,16 +49,16 @@ function initApp() {
 
   let cellTemplate = [];
   for (const [row, field] of scoreFields.entries()) {
-    for (let column = 0; column < players; column++) {
-      const x = (column * cellWidth) + offsetLeft;
-      const yOffset = field.upper ? offsetUpperBlock : offsetLowerBlock;
-      const y = (row * cellHeight) + yOffset
+    for (let col = 0; col < players; col++) {
+      const x = ((col * cellWidth) + offsetLeft) - (cellPaddingX * cellWidth) ;
+      const yOffset = field.upper ? offsetUpperBlock : offsetUpperBlock + offsetLowerBlock;
+      const y = (row * cellHeight) + yOffset - (cellPaddingY * cellHeight)
       cellTemplate.push({row: row, 
-                         column: column, 
+                         col: col, 
                          x: Math.round(x), 
                          y: Math.round(y),
-                         w: Math.round(cellWidth), 
-                         h: Math.round(cellHeight)});
+                         w: Math.round(cellWidth + (2 * cellPaddingX * cellWidth)), 
+                         h: Math.round(cellHeight  + (2 * cellPaddingY * cellHeight))});
     }
   }
 
@@ -89,7 +92,7 @@ function initApp() {
     }
   }
 
-
+  // Button to sitch camera
   switchBtn.addEventListener('click', () => {
     useFrontCamera = !useFrontCamera;
     startCamera();
@@ -105,17 +108,18 @@ function initApp() {
   startCamera();
 
   function detectCardCornersAndWarp(src, cardWidth, cardHeight) {
-    let gray = new cv.Mat();
+    let blurred = new cv.Mat();
     let binary = new cv.Mat();
     let contours = new cv.MatVector();
     let hierarchy = new cv.Mat();
 
-    // Grayscale
-    cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+    // Blur (smoothes out noise and improves the resulting binary)
+    // fyi: "Canny() does already include Gaussian blurring, but it works way better with this extra step"
+    cv.GaussianBlur(src, blurred, new cv.Size(5, 5), 0);
+    // Turn to binary image
+    cv.Canny(blurred, binary, 50, 150);
 
-    // Blur
-    cv.GaussianBlur(gray, gray, new cv.Size(5, 5), 0);
-    cv.Canny(gray, binary, 50, 150);
+    cv.imshow('binary', binary);
 
     // Find contours
     cv.findContours(binary, contours, hierarchy, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE);
@@ -171,101 +175,89 @@ function initApp() {
       warped = src.clone(); // fallback to unwarped
     }
 
-    gray.delete(); binary.delete(); contours.delete(); hierarchy.delete();
+    blurred.delete(); binary.delete(); contours.delete(); hierarchy.delete();
     if (biggestContour) biggestContour.delete();
 
     return warped;
   }
 
-  // Helper to sort the 4 corners: top-left, top-right, bottom-right, bottom-left
-  function sortCorners(cnt) {
-    let points = [];
-    for (let i = 0; i < cnt.rows; i++) {
-      points.push({ x: cnt.intPtr(i, 0)[0], y: cnt.intPtr(i, 0)[1] });
-    }
-
-    // Sort by y, then x
-    points.sort((a, b) => a.y - b.y);
-    let top = points.slice(0, 2).sort((a, b) => a.x - b.x);
-    let bottom = points.slice(2, 4).sort((a, b) => a.x - b.x);
-    return [top[0], top[1], bottom[1], bottom[0]];
-  }
-
-  function extractCells(warped, template) {
+  function extractCells(warped, template, debugCanvasId = "debug") {
     const cells = [];
+    const debugImg = warped.clone();
 
     for (const cell of template) {
       const rect = new cv.Rect(cell.x, cell.y, cell.w, cell.h);
-      console.log(cell.x, cell.y, cell.w, cell.h);
       const roi = warped.roi(rect);
+
+      // Draw rectangle on debug image
+      const pt1 = new cv.Point(cell.x, cell.y);
+      const pt2 = new cv.Point(cell.x + cell.w, cell.y + cell.h);
+
+      cv.rectangle(debugImg, pt1, pt2, getRandomColor(), 2);
+
       cells.push({
         row: cell.row,
         col: cell.col,
-        image: roi
+        image: roi,
       });
     }
-
+    cv.imshow(debugCanvasId, debugImg);
+    debugImg.delete();
     return cells;
   }
 
-function extractCellsWithDebug(warped, template, debugCanvasId = "digits") {
-  const cells = [];
-  const debugImg = warped.clone();
-
-  for (const cell of template) {
-    const rect = new cv.Rect(cell.x, cell.y, cell.w, cell.h);
-
-    console.log(`Rect: x=${cell.x}, y=${cell.y}, w=${cell.w}, h=${cell.h}, imgSize: ${warped.cols}x${warped.rows}`);
-    let roi;
-    try {
-      roi = warped.roi(rect);
-      cells.push({ ...cell, image: roi });
-    } catch (e) {
-      console.error("ROI extraction failed for rect:", rect, "error:", e);
-    }
-
-    // Draw rectangle on debug image
-    const pt1 = new cv.Point(cell.x, cell.y);
-    const pt2 = new cv.Point(cell.x + cell.w, cell.y + cell.h);
-    cv.rectangle(debugImg, pt1, pt2, new cv.Scalar(255, 0, 0, 255), 2);
-
-    // Optional: draw text (row,col)
-    cv.putText(
-      debugImg,
-      `${cell.row},${cell.col}`,
-      new cv.Point(cell.x + 5, cell.y + 25),
-      cv.FONT_HERSHEY_SIMPLEX,
-      0.6,
-      new cv.Scalar(0, 255, 0, 255),
-      1
-    );
-
-    cells.push({
-      row: cell.row,
-      col: cell.col,
-      image: roi
-    });
-  }
-
-  cv.imshow(debugCanvasId, debugImg);
-  debugImg.delete();
-
-  return cells;
-}
-
-
-  async function recognizeDigits(cells) {
+  async function recognizeDigitsTesseract(cells) {
     const results = [];
 
-    for (const cell of cells) {
-      const canvas = document.createElement('canvas');
-      canvas.width = cell.image.cols;
-      canvas.height = cell.image.rows;
-      cv.imshow(canvas, cell.image);
+    const debugContainer = document.getElementById("debugOCR");
+    debugContainer.innerHTML = ""; // clear previous results
 
+    for (const cell of cells) {
+      // Preprocess cell image: grayscale + threshold + resize
+      let gray = new cv.Mat();
+      cv.cvtColor(cell.image, gray, cv.COLOR_RGBA2GRAY);
+      cv.threshold(gray, gray, 0, 255, cv.THRESH_BINARY_INV + cv.THRESH_OTSU);
+
+      // Resize up for better OCR accuracy
+      let resized = new cv.Mat();
+      const scale = 2.0;
+      cv.resize(gray, resized, new cv.Size(0, 0), scale, scale, cv.INTER_LINEAR);
+      //let resized = gray.clone(); //skip resizing and try later
+
+      // thin the lines
+      //let dist = new cv.Mat();
+      //cv.distanceTransform(resized, dist, cv.DIST_L2, 3);
+
+      // Normalize to 0–255 and threshold
+      //cv.normalize(dist, dist, 0, 255, cv.NORM_MINMAX);
+      //dist.convertTo(dist, cv.CV_8U);
+
+      //let central = new cv.Mat();
+      //cv.threshold(dist, central, 75, 255, cv.THRESH_BINARY); // tweak threshold
+      //resized = central.clone()
+
+      const colorDebug = new cv.Mat();
+      cv.cvtColor(resized, colorDebug, cv.COLOR_GRAY2RGBA);
+      removeBorderArtifactsDEBUG(resized, 0.15, 0.4, colorDebug);
+      
+      // Convert to canvas for Tesseract
+      const canvasDEBUG = document.createElement('canvas');
+      canvasDEBUG.width = colorDebug.cols;
+      canvasDEBUG.height = colorDebug.rows;
+      cv.imshow(canvasDEBUG, colorDebug);
+
+      cv.bitwise_not(resized, resized);
+
+      // Convert to canvas for Tesseract
+      const canvas = document.createElement('canvas');
+      canvas.width = resized.cols;
+      canvas.height = resized.rows;
+      cv.imshow(canvas, resized);
+
+      // OCR
       const result = await Tesseract.recognize(canvas, 'eng', {
-        tessedit_char_whitelist: '0123456789',
-        classify_bln_numeric_mode: 1,
+        tessedit_char_whitelist: '0123456789/',
+        tessedit_pageseg_mode: Tesseract.PSM.SPARSE_TEXT
       });
 
       results.push({
@@ -274,25 +266,126 @@ function extractCellsWithDebug(warped, template, debugCanvasId = "digits") {
         text: result.data.text.trim()
       });
 
-      cell.image.delete();
+
+      // OPTIONAL: show in UI for debugging
+      const label = document.createElement("div");
+      label.style.display = "inline-block";
+      label.style.margin = "5px";
+      label.innerHTML = `<strong>${cell.row}:${cell.col} - ${result.data.text}</strong><br/>`;
+      label.appendChild(canvasDEBUG);
+      debugContainer.appendChild(label);
+
+
+      // Cleanup
+      gray.delete(); resized.delete(); cell.image.delete();
     }
 
+    console.table(results);
     return results;
   }
+
+
+  async function recognizeDigits(cells) {
+    const results = [];
+
+    const debugContainer = document.getElementById("debugOCR");
+    debugContainer.innerHTML = ""; // clear previous results
+
+    for (const cell of cells) {
+      let gray = new cv.Mat();
+      cv.cvtColor(cell.image, gray, cv.COLOR_RGBA2GRAY);
+      cv.threshold(gray, gray, 0, 255, cv.THRESH_BINARY_INV + cv.THRESH_OTSU);
+
+      const inputTensor = preprocessForMNIST(gray);
+      const digit = await predictDigit(inputTensor);
+
+      results.push({
+        row: cell.row,
+        col: cell.col,
+        text: digit
+      });
+
+      // Show in UI for debugging
+      const canvas = document.createElement('canvas');
+      canvas.width = gray.cols;
+      canvas.height = gray.rows;
+      cv.imshow(canvas, gray);
+
+      const label = document.createElement("div");
+      label.style.display = "inline-block";
+      label.style.margin = "5px";
+      label.innerHTML = `<strong>${cell.row}:${cell.col} - ${digit}</strong><br/>`;
+      label.appendChild(canvas);
+      debugContainer.appendChild(label);
+
+      // Cleanup
+      gray.delete(); cell.image.delete();
+    }
+    return results;
+  }
+
+
+
+  const modelURL = "kniffelcam/mnist-model.json";
+  let model;
+  async function loadModel() {
+    model = await tf.loadLayersModel(modelURL);
+    console.log("MNIST model loaded");
+  }
+  loadModel();
+
+  function preprocessForMNIST(cellMat) {
+    // Resize to 28x28
+    let resized = new cv.Mat();
+    cv.resize(cellMat, resized, new cv.Size(28, 28), 0, 0, cv.INTER_AREA);
+
+    // Convert to tensor
+    const imgData = [];
+    for (let y = 0; y < 28; y++) {
+      for (let x = 0; x < 28; x++) {
+        // Invert: white digit (0) on black (1) background
+        const pixel = resized.ucharPtr(y, x)[0];
+        imgData.push((255 - pixel) / 255);  // normalize to 0–1
+      }
+    }
+
+    const input = tf.tensor4d(imgData, [1, 28, 28, 1]);
+    resized.delete();
+    return input;
+  }
+
+  async function predictDigit(tensor) {
+    const prediction = model.predict(tensor);
+    const predictedValue = (await prediction.argMax(1).data())[0];
+    tensor.dispose();
+    prediction.dispose();
+    return predictedValue;
+  }
+
+  async function recognizeDigitFromCell(cellMat) {
+    // Preprocess: grayscale, threshold
+    let gray = new cv.Mat();
+    cv.cvtColor(cellMat, gray, cv.COLOR_RGBA2GRAY);
+    cv.threshold(gray, gray, 0, 255, cv.THRESH_BINARY_INV + cv.THRESH_OTSU);
+
+    const inputTensor = preprocessForMNIST(gray);
+    const digit = await predictDigit(inputTensor);
+
+    gray.delete();
+    return digit;
+  }
+
+
 
 
   function detectTableAndDigits(src) {
     const warped = detectCardCornersAndWarp(src, cardWidth, cardHeight);
     cv.imshow("canvas", src);
-    cv.imshow("warped", warped);
-    //const cells = extractCells(warped, cellTemplate);
-    
-    const cells = extractCellsWithDebug(warped, cellTemplate);
+    const cells = extractCells(warped, cellTemplate);
 
-    recognizeDigits(cells).then(results => {
-    
+    recognizeDigitsTesseract(cells).then(results => {
       console.table(results);
-    // TODO: Use results to update score sheet, calculate total, etc.
+      // TODO: Use results to update score sheet, calculate total, etc.
     });
   }
 }
