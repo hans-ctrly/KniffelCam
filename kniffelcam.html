@@ -1,6 +1,10 @@
 <!DOCTYPE html>
 <html>
     <head>
+        <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+        <meta http-equiv="Pragma" content="no-cache">
+        <meta http-equiv="Expires" content="0">
+
         <title>KNIFFEL CAM</title>
         <link rel="stylesheet" href="css/sub-page.css">
         <link rel="icon" type="image/x-icon" href="/favicon.jpg">
@@ -13,14 +17,17 @@
         <div class="content">
             <video id="video" autoplay playsinline style="max-width: 100%;"></video>
             <button id="snap">Capture</button>
-            <canvas id="canvas" width="400" height="500"></canvas>
-            <canvas id="debug" width="400" height="500"></canvas>
-            <canvas id="warped" width="400" height="500"></canvas>
-            <canvas id="digits" width="400" height="500"></canvas>
+            <canvas id="binary" width="100%"></canvas>
+            <canvas id="canvas" width="100%" style="display: none"></canvas>
+            <canvas id="debug" width="100%"></canvas>
+            <div id="debugOCR" style="display: flex; flex-wrap: wrap; max-width: width=100%;"></div>
+
 
         </div>
         <script src="https://docs.opencv.org/4.7.0/opencv.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs/dist/tf.min.js"> </script>
         <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4.0.2/dist/tesseract.min.js"></script>
+        <script src="kniffelcam/helperFunctions.js"></script>
         <script src="kniffelcam/kniffelcam.js?v=1"></script>
         <script src="https://cdn.jsdelivr.net/npm/eruda"></script>
         <script>eruda.init();</script>

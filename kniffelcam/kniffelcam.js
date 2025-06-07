@@ -18,18 +18,19 @@ function initApp() {
   const canvas = document.getElementById('canvas');
   const ctx = canvas.getContext('2d');
   const switchBtn = document.getElementById('switchCamera');
-  const cardWidth = 950, cardHeight = 1400;
+  const cardWidth = 1900; //950
+  cardHeight = 2800; //1400
 
   // Define the Kniffel score sheet based on measured values
-  const cellHeight = cardHeight * 0.0357;
+  const cellHeight = cardHeight * 0.0355;
   const cellWidth = cardWidth * 0.10526
   const offsetUpperBlock = cardHeight * 0.23;
   const offsetLowerBlock = cardHeight * 0.13;
-  const offsetLeft = 0.327 * cardWidth;
-  const players = 1; //Number of player columns per scorecard
+  const offsetLeft = 0.34 * cardWidth;
+  const players = 2; //Number of player columns per scorecard
   //Extra size of each cell allow for inaccuracies in the warped image
-  const cellPaddingX = .015; 
-  const cellPaddingY = .15;
+  const cellPaddingX = .0; 
+  const cellPaddingY = .0;
 
   const scoreFields = [
     {name: "Einser", upper: true},
@@ -64,48 +65,25 @@ function initApp() {
 
   let useFrontCamera = false;
   let currentStream;
-
-  async function startCamera() {
-    if (currentStream) {
-      currentStream.getTracks().forEach(track => track.stop());
-    }
-
-    const constraints = {
-      video: {
-        facingMode: useFrontCamera ? "user" : "environment",
-      },
-      audio: false
-    };
-
-    try {
-      currentStream = await navigator.mediaDevices.getUserMedia(constraints);
-      video.srcObject = currentStream;
-
-      // Wait for video metadata to load so we can get dimensions
-      video.onloadedmetadata = () => {
-        video.play(); // make sure video is playing
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-      };
-    } catch (err) {
-      console.error("Camera start error:", err);
-    }
-  }
+  startCamera(currentStream, useFrontCamera).then(stream => {
+    currentStream = stream;
+  });
 
   // Button to sitch camera
   switchBtn.addEventListener('click', () => {
     useFrontCamera = !useFrontCamera;
-    startCamera();
+    startCamera(currentStream, useFrontCamera).then(stream => {
+      currentStream = stream;
+    });
   });
 
   document.getElementById('snap').addEventListener('click', () => {
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
     const src = cv.matFromImageData(imageData);
+    stopCamera(currentStream);
     detectTableAndDigits(src);
   });
-
-  startCamera();
 
   function detectCardCornersAndWarp(src, cardWidth, cardHeight) {
     let blurred = new cv.Mat();
@@ -218,6 +196,8 @@ function initApp() {
       cv.cvtColor(cell.image, gray, cv.COLOR_RGBA2GRAY);
       cv.threshold(gray, gray, 0, 255, cv.THRESH_BINARY_INV + cv.THRESH_OTSU);
 
+      cleanCellEdges(gray);
+
       // Resize up for better OCR accuracy
       let resized = new cv.Mat();
       const scale = 2.0;
@@ -238,7 +218,7 @@ function initApp() {
 
       const colorDebug = new cv.Mat();
       cv.cvtColor(resized, colorDebug, cv.COLOR_GRAY2RGBA);
-      removeBorderArtifactsDEBUG(resized, 0.15, 0.4, colorDebug);
+      removeBorderArtifactsDEBUG(resized, 0.15, 0.75, colorDebug);
       
       // Convert to canvas for Tesseract
       const canvasDEBUG = document.createElement('canvas');
@@ -332,7 +312,7 @@ function initApp() {
     model = await tf.loadLayersModel(modelURL);
     console.log("MNIST model loaded");
   }
-  loadModel();
+  //loadModel();
 
   function preprocessForMNIST(cellMat) {
     // Resize to 28x28
