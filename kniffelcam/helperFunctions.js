@@ -38,6 +38,173 @@ function stopCamera(currentStream) {
     //}
 }
 
+function detectCardCornersAndWarp(src, cardWidth, cardHeight) {
+  let blurred = new cv.Mat();
+  let binary = new cv.Mat();
+  let contours = new cv.MatVector();
+  let hierarchy = new cv.Mat();
+
+  // Blur (smoothes out noise and improves the resulting binary)
+  // fyi: Canny() does already include a Gaussian blur, but it works way better with this extra step
+  cv.GaussianBlur(src, blurred, new cv.Size(5, 5), 0);
+  // Turn to binary image
+  cv.Canny(blurred, binary, 50, 150);
+
+  cv.imshow('binary', binary);
+
+  // Find contours
+  cv.findContours(binary, contours, hierarchy, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE);
+
+  let maxArea = 0;
+  let biggestContour = null;
+
+  for (let i = 0; i < contours.size(); i++) {
+    const cnt = contours.get(i);
+    const area = cv.contourArea(cnt);
+    const peri = cv.arcLength(cnt, true);
+    const approx = new cv.Mat();
+
+    cv.approxPolyDP(cnt, approx, 0.02 * peri, true);
+
+    // Find the largest 4-corner polygon
+    if (area > maxArea && approx.rows === 4) {
+      maxArea = area;
+      biggestContour = approx;
+    } else {
+      approx.delete();
+    }
+    cnt.delete();
+  }
+
+  let warped = new cv.Mat();
+  if (biggestContour) {
+    const sorted = sortCorners(biggestContour);
+
+    const srcCorners = cv.matFromArray(4, 1, cv.CV_32FC2, [
+      sorted[0].x, sorted[0].y,
+      sorted[1].x, sorted[1].y,
+      sorted[2].x, sorted[2].y,
+      sorted[3].x, sorted[3].y
+    ]);
+    const dstCorners = cv.matFromArray(4, 1, cv.CV_32FC2, [
+      0, 0,
+      cardWidth, 0,
+      cardWidth, cardHeight,
+      0, cardHeight
+    ]);
+
+    const transform = cv.getPerspectiveTransform(srcCorners, dstCorners);
+    cv.warpPerspective(src, warped, transform, new cv.Size(cardWidth, cardHeight));
+    
+  for (let pt of sorted) {
+    cv.circle(src, new cv.Point(pt.x, pt.y), 10, new cv.Scalar(0, 255, 0, 255), -1);
+  }
+
+    srcCorners.delete(); dstCorners.delete(); transform.delete();
+  } else {
+    console.warn("No card detected");
+    warped = src.clone(); // fallback to unwarped
+  }
+
+  blurred.delete(); binary.delete(); contours.delete(); hierarchy.delete();
+  if (biggestContour) biggestContour.delete();
+
+  return warped;
+}
+
+function refineCellFromPaddedImage(paddedMat, whiteThreshold = 0.70) {
+  let gray = new cv.Mat();
+  let binary = new cv.Mat();
+  let resultRect = null;
+
+  // Grayscale and binary
+  cv.cvtColor(paddedMat, gray, cv.COLOR_RGBA2GRAY);
+  cv.threshold(gray, binary, 0, 255, cv.THRESH_BINARY + cv.THRESH_OTSU);
+  cv.bitwise_not(binary, binary);
+  const debugContainer = document.getElementById("debugCellRefinement");
+
+  const rows = binary.rows;
+  const cols = binary.cols;
+
+  const horizontalLines = [];
+  const verticalLines = [];
+
+  // Scan rows from top
+  for (let y = 0; y < rows; y++) {
+    const row = binary.row(y);
+    const whiteRatio = cv.countNonZero(row) / cols;
+    if (whiteRatio > whiteThreshold) {
+      horizontalLines.push(y);
+      if (horizontalLines.length >= 2) break;
+    }
+  }
+
+  // Scan rows from bottom
+  for (let y = rows - 1; y >= 0; y--) {
+    const row = binary.row(y);
+    const whiteRatio = cv.countNonZero(row) / cols;
+    if (whiteRatio > whiteThreshold) {
+      horizontalLines.push(y);
+      if (horizontalLines.length >= 4) break;
+    }
+  }
+
+  // Scan cols from left
+  for (let x = 0; x < cols; x++) {
+    const col = binary.col(x);
+    const whiteRatio = cv.countNonZero(col) / rows;
+    if (whiteRatio > whiteThreshold) {
+      verticalLines.push(x);
+      if (verticalLines.length >= 2) break;
+    }
+  }
+
+  // Scan cols from right
+  for (let x = cols - 1; x >= 0; x--) {
+    const col = binary.col(x);
+    const whiteRatio = cv.countNonZero(col) / rows;
+    if (whiteRatio > whiteThreshold) {
+      verticalLines.push(x);
+      if (verticalLines.length >= 4) break;
+    }
+  }
+
+  let x1, y1, x2, y2;
+  // Sort and get bounding box
+  if (horizontalLines.length >= 2 && verticalLines.length >= 2) {
+    horizontalLines.sort((a, b) => a - b);
+    verticalLines.sort((a, b) => a - b);
+    y1 = horizontalLines[0]
+    y2 = horizontalLines[horizontalLines.length - 1];
+    x1 = verticalLines[0]
+    x2 = verticalLines[verticalLines.length - 1];
+
+    resultRect = new cv.Rect(x1, y1, x2 - x1, y2 - y1);
+  } else {
+    console.warn("No cell found in refinement")
+    return null;
+  }
+
+  
+  // Optional: draw on a debug copy
+  let debug = new cv.Mat();
+  cv.cvtColor(binary, debug, cv.COLOR_GRAY2RGBA);
+  const vec = new cv.MatVector();
+  cv.rectangle(debug, new cv.Point(x1, y1), new cv.Point(x2, y2), new cv.Scalar(0, 255, 0, 255), 2);
+  const canvasDEBUG = document.createElement('canvas');
+  canvasDEBUG.width = debug.cols;
+  canvasDEBUG.height = debug.rows;
+  cv.imshow(canvasDEBUG, debug);
+  const debugImg = document.createElement("div");
+  debugImg.appendChild(canvasDEBUG);
+  debugContainer.appendChild(debugImg);
+  debug.delete();
+
+  gray.delete(); binary.delete();
+
+  return resultRect;
+}
+
 // Get different colors for the cell borders in the debug image 
 function getRandomColor() {
     return new cv.Scalar(

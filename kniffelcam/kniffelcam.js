@@ -29,8 +29,8 @@ function initApp() {
   const offsetLeft = 0.34 * cardWidth;
   const players = 2; //Number of player columns per scorecard
   //Extra size of each cell allow for inaccuracies in the warped image
-  const cellPaddingX = .0; 
-  const cellPaddingY = .0;
+  const cellPaddingX = .15; 
+  const cellPaddingY = .25;
 
   const scoreFields = [
     {name: "Einser", upper: true},
@@ -85,80 +85,6 @@ function initApp() {
     detectTableAndDigits(src);
   });
 
-  function detectCardCornersAndWarp(src, cardWidth, cardHeight) {
-    let blurred = new cv.Mat();
-    let binary = new cv.Mat();
-    let contours = new cv.MatVector();
-    let hierarchy = new cv.Mat();
-
-    // Blur (smoothes out noise and improves the resulting binary)
-    // fyi: "Canny() does already include Gaussian blurring, but it works way better with this extra step"
-    cv.GaussianBlur(src, blurred, new cv.Size(5, 5), 0);
-    // Turn to binary image
-    cv.Canny(blurred, binary, 50, 150);
-
-    cv.imshow('binary', binary);
-
-    // Find contours
-    cv.findContours(binary, contours, hierarchy, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE);
-
-    let maxArea = 0;
-    let biggestContour = null;
-
-    for (let i = 0; i < contours.size(); i++) {
-      const cnt = contours.get(i);
-      const area = cv.contourArea(cnt);
-      const peri = cv.arcLength(cnt, true);
-      const approx = new cv.Mat();
-
-      cv.approxPolyDP(cnt, approx, 0.02 * peri, true);
-
-      // Find the largest 4-corner polygon
-      if (area > maxArea && approx.rows === 4) {
-        maxArea = area;
-        biggestContour = approx;
-      } else {
-        approx.delete();
-      }
-      cnt.delete();
-    }
-
-    let warped = new cv.Mat();
-    if (biggestContour) {
-      const sorted = sortCorners(biggestContour);
-
-      const srcCorners = cv.matFromArray(4, 1, cv.CV_32FC2, [
-        sorted[0].x, sorted[0].y,
-        sorted[1].x, sorted[1].y,
-        sorted[2].x, sorted[2].y,
-        sorted[3].x, sorted[3].y
-      ]);
-      const dstCorners = cv.matFromArray(4, 1, cv.CV_32FC2, [
-        0, 0,
-        cardWidth, 0,
-        cardWidth, cardHeight,
-        0, cardHeight
-      ]);
-
-      const transform = cv.getPerspectiveTransform(srcCorners, dstCorners);
-      cv.warpPerspective(src, warped, transform, new cv.Size(cardWidth, cardHeight));
-      
-    for (let pt of sorted) {
-      cv.circle(src, new cv.Point(pt.x, pt.y), 10, new cv.Scalar(0, 255, 0, 255), -1);
-    }
-
-     srcCorners.delete(); dstCorners.delete(); transform.delete();
-    } else {
-      console.warn("No card detected");
-      warped = src.clone(); // fallback to unwarped
-    }
-
-    blurred.delete(); binary.delete(); contours.delete(); hierarchy.delete();
-    if (biggestContour) biggestContour.delete();
-
-    return warped;
-  }
-
   function extractCells(warped, template, debugCanvasId = "debug") {
     const cells = [];
     const debugImg = warped.clone();
@@ -167,16 +93,24 @@ function initApp() {
       const rect = new cv.Rect(cell.x, cell.y, cell.w, cell.h);
       const roi = warped.roi(rect);
 
+      // Try refining the found cell
+      const refinedContour = refineCellFromPaddedImage(roi);
+      if (!refinedContour) {
+        console.warn("Cell contour refinment failed");
+        return null;
+      }
+      let finalROI;
+      finalROI = roi.roi(refinedContour);
+
       // Draw rectangle on debug image
       const pt1 = new cv.Point(cell.x, cell.y);
       const pt2 = new cv.Point(cell.x + cell.w, cell.y + cell.h);
-
       cv.rectangle(debugImg, pt1, pt2, getRandomColor(), 2);
 
       cells.push({
         row: cell.row,
         col: cell.col,
-        image: roi,
+        image: finalROI,
       });
     }
     cv.imshow(debugCanvasId, debugImg);
@@ -202,19 +136,6 @@ function initApp() {
       let resized = new cv.Mat();
       const scale = 2.0;
       cv.resize(gray, resized, new cv.Size(0, 0), scale, scale, cv.INTER_LINEAR);
-      //let resized = gray.clone(); //skip resizing and try later
-
-      // thin the lines
-      //let dist = new cv.Mat();
-      //cv.distanceTransform(resized, dist, cv.DIST_L2, 3);
-
-      // Normalize to 0–255 and threshold
-      //cv.normalize(dist, dist, 0, 255, cv.NORM_MINMAX);
-      //dist.convertTo(dist, cv.CV_8U);
-
-      //let central = new cv.Mat();
-      //cv.threshold(dist, central, 75, 255, cv.THRESH_BINARY); // tweak threshold
-      //resized = central.clone()
 
       const colorDebug = new cv.Mat();
       cv.cvtColor(resized, colorDebug, cv.COLOR_GRAY2RGBA);
@@ -254,7 +175,6 @@ function initApp() {
       label.innerHTML = `<strong>${cell.row}:${cell.col} - ${result.data.text}</strong><br/>`;
       label.appendChild(canvasDEBUG);
       debugContainer.appendChild(label);
-
 
       // Cleanup
       gray.delete(); resized.delete(); cell.image.delete();
@@ -303,8 +223,6 @@ function initApp() {
     }
     return results;
   }
-
-
 
   const modelURL = "kniffelcam/mnist-model.json";
   let model;
@@ -355,17 +273,20 @@ function initApp() {
     return digit;
   }
 
-
-
-
   function detectTableAndDigits(src) {
     const warped = detectCardCornersAndWarp(src, cardWidth, cardHeight);
     cv.imshow("canvas", src);
     const cells = extractCells(warped, cellTemplate);
+    if (!cells) {
+      console.warn("Exctracting cells failed");
+      return null;
+    }
 
     recognizeDigitsTesseract(cells).then(results => {
-      console.table(results);
+      console.log("Recognizing!")
       // TODO: Use results to update score sheet, calculate total, etc.
     });
+    // TODO: use retun value to restart scanning if it failed
+    return 1;
   }
 }
