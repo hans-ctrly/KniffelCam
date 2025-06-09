@@ -1,11 +1,6 @@
-async function initCamera() {
-    currentStream = await startCamera(currentStream, useFrontCamera);
-    return currentStream;
-}
-
-async function startCamera(existingStream, useFrontCamera) {
+async function startCamera(canvas, existingStream, useFrontCamera) {
   if (existingStream) {
-    existingStream.getTracks().forEach(track => track.stop());
+      existingStream.getTracks().forEach(track => track.stop());
   }
   
   const constraints = {
@@ -18,27 +13,68 @@ async function startCamera(existingStream, useFrontCamera) {
   try {
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
       video.srcObject = stream;
-      video.onloadedmetadata = () => {
-          video.play();
-          canvas.width = video.videoWidth;
-          canvas.height = video.videoHeight;
-      };
-      return stream; // Return the new stream
+      
+      return new Promise((resolve) => {
+          video.onloadedmetadata = () => {
+              video.play();
+              canvas.width = video.videoWidth;
+              canvas.height = video.videoHeight;
+              
+              // Initialize overlay AFTER canvas dimensions are set
+              const overlayCtx = initializeOverlay(canvas);
+              
+              // Return both stream and overlayCtx
+              resolve({ stream, overlayCtx });
+          };
+      });
+      
   } catch (err) {
       console.error("Camera start error:", err);
-      return null;
+      return { stream: null, overlayCtx: null };
   }
 }
 
 function stopCamera(currentStream) {
-    //if (currentStream) {
-        currentStream.getTracks().forEach(track => track.stop());
-        currentStream = null; // Clear the reference
-        video.srcObject = null; // Clear the video element's source
-    //}
+  if (currentStream) {
+    currentStream.getTracks().forEach(track => track.stop());
+    currentStream = null; // Clear the reference
+    video.srcObject = null; // Clear the video element's source
+  }
+  const overlayCanvas = document.getElementById("overlayCanvas");
+  overlayCanvas.style.display = "none";
 }
 
-function detectCardCornersAndWarp(src, cardWidth, cardHeight) {
+function initializeOverlay(cameraCanvas) {
+    const overlayCanvas = document.getElementById("overlayCanvas");
+    overlayCanvas.width = cameraCanvas.width;
+    overlayCanvas.height = cameraCanvas.height;    
+    const overlayCtx = overlayCanvas.getContext('2d');    
+    return overlayCtx;
+}
+
+// Clear overlay canvas
+function clearOverlay(overlayCtx) {
+  if (overlayCtx) {
+    const overlayCanvas = overlayCtx.canvas;
+    overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+  }
+}
+
+function detectTableAndDigits(src, cardWidth, cardHeight, cellTemplate) {
+  const srcCorners = detectCardCorners(src);
+  if (!srcCorners) {
+    return null;
+  }
+  
+  const warped = warpCard(src, srcCorners, cardWidth, cardHeight);
+  const cells = extractCells(warped, cellTemplate);
+  if (!cells) {
+    return null;
+  }
+  return cells;
+}
+
+function detectCardCorners(src, debugPrint = false) {
   let blurred = new cv.Mat();
   let binary = new cv.Mat();
   let contours = new cv.MatVector();
@@ -49,8 +85,6 @@ function detectCardCornersAndWarp(src, cardWidth, cardHeight) {
   cv.GaussianBlur(src, blurred, new cv.Size(5, 5), 0);
   // Turn to binary image
   cv.Canny(blurred, binary, 50, 150);
-
-  cv.imshow('binary', binary);
 
   // Find contours
   cv.findContours(binary, contours, hierarchy, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE);
@@ -76,43 +110,83 @@ function detectCardCornersAndWarp(src, cardWidth, cardHeight) {
     cnt.delete();
   }
 
-  let warped = new cv.Mat();
+  let cardCorners = null;
   if (biggestContour) {
     const sorted = sortCorners(biggestContour);
 
-    const srcCorners = cv.matFromArray(4, 1, cv.CV_32FC2, [
+    cardCorners = cv.matFromArray(4, 1, cv.CV_32FC2, [
       sorted[0].x, sorted[0].y,
       sorted[1].x, sorted[1].y,
       sorted[2].x, sorted[2].y,
       sorted[3].x, sorted[3].y
     ]);
-    const dstCorners = cv.matFromArray(4, 1, cv.CV_32FC2, [
-      0, 0,
-      cardWidth, 0,
-      cardWidth, cardHeight,
-      0, cardHeight
-    ]);
-
-    const transform = cv.getPerspectiveTransform(srcCorners, dstCorners);
-    cv.warpPerspective(src, warped, transform, new cv.Size(cardWidth, cardHeight));
-    
-  for (let pt of sorted) {
-    cv.circle(src, new cv.Point(pt.x, pt.y), 10, new cv.Scalar(0, 255, 0, 255), -1);
+  
+    if (debugPrint) {
+      let debugBinary = new cv.Mat();
+      cv.cvtColor(binary, debugBinary, cv.COLOR_GRAY2RGBA);
+      // draw found corners on debug image
+      for (let pt of sorted) {
+        cv.circle(debugBinary, new cv.Point(pt.x, pt.y), 10, new cv.Scalar(0, 255, 0, 255), -1);
+      }
+      cv.imshow("debugBinary", debugBinary);
+      debugBinary.delete(); 
+    }
+    biggestContour.delete();
   }
-
-    srcCorners.delete(); dstCorners.delete(); transform.delete();
-  } else {
-    console.warn("No card detected");
-    warped = src.clone(); // fallback to unwarped
-  }
-
   blurred.delete(); binary.delete(); contours.delete(); hierarchy.delete();
-  if (biggestContour) biggestContour.delete();
+  
+  return cardCorners
+}
 
+function warpCard(src, srcCorners, cardWidth, cardHeight) {
+  let warped = new cv.Mat();
+  const dstCorners = cv.matFromArray(4, 1, cv.CV_32FC2, [
+    0, 0,
+    cardWidth, 0,
+    cardWidth, cardHeight,
+    0, cardHeight
+  ]);
+  const transform = cv.getPerspectiveTransform(srcCorners, dstCorners);
+  cv.warpPerspective(src, warped, transform, new cv.Size(cardWidth, cardHeight));
+  dstCorners.delete(); transform.delete();
   return warped;
 }
 
-function refineCellFromPaddedImage(paddedMat, whiteThreshold = 0.70) {
+function extractCells(tableImage, template) {
+    const cells = [];
+    const debugImg = tableImage.clone();
+    const debugContainer = document.getElementById("debugCellRefinement");
+
+    for (const cell of template) {
+      const rect = new cv.Rect(cell.x, cell.y, cell.w, cell.h);
+      const roi = tableImage.roi(rect);
+
+      // Draw approximate cells on debug image
+      const pt1 = new cv.Point(cell.x, cell.y);
+      const pt2 = new cv.Point(cell.x + cell.w, cell.y + cell.h);
+      cv.rectangle(debugImg, pt1, pt2, getRandomColor(), 2);
+      const whiteThreshold = .7;
+      // Try refining the found cell
+      const refinedContour = refineCellFromPaddedImage(roi, whiteThreshold, debugContainer);
+      if (!refinedContour) {
+        debugContainer.innerHTML = "";
+        return null;
+      }
+      let finalROI;
+      finalROI = roi.roi(refinedContour);
+
+      cells.push({
+        row: cell.row,
+        col: cell.col,
+        image: finalROI,
+      });
+    }
+    cv.imshow("debugTable", debugImg);
+    debugImg.delete();
+    return cells;
+  }
+
+function refineCellFromPaddedImage(paddedMat, whiteThreshold, debugContainer) {
   let gray = new cv.Mat();
   let binary = new cv.Mat();
   let resultRect = null;
@@ -121,7 +195,6 @@ function refineCellFromPaddedImage(paddedMat, whiteThreshold = 0.70) {
   cv.cvtColor(paddedMat, gray, cv.COLOR_RGBA2GRAY);
   cv.threshold(gray, binary, 0, 255, cv.THRESH_BINARY + cv.THRESH_OTSU);
   cv.bitwise_not(binary, binary);
-  const debugContainer = document.getElementById("debugCellRefinement");
 
   const rows = binary.rows;
   const cols = binary.cols;
@@ -181,12 +254,11 @@ function refineCellFromPaddedImage(paddedMat, whiteThreshold = 0.70) {
 
     resultRect = new cv.Rect(x1, y1, x2 - x1, y2 - y1);
   } else {
-    console.warn("No cell found in refinement")
     return null;
   }
 
   
-  // Optional: draw on a debug copy
+  // Draw cell bounbdary on debug image
   let debug = new cv.Mat();
   cv.cvtColor(binary, debug, cv.COLOR_GRAY2RGBA);
   const vec = new cv.MatVector();
@@ -229,63 +301,18 @@ function getRandomColor() {
     return [top[0], top[1], bottom[1], bottom[0]];
   }
 
-// 
-function removeBorderArtifacts(binaryMat, marginRatio = 0.2, outsideThreshold = 0.5) {
-  const contours = new cv.MatVector();
-  const hierarchy = new cv.Mat();
-  cv.findContours(binaryMat, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_NONE);
-
-  const w = binaryMat.cols;
-  const h = binaryMat.rows;
-
-  const marginX = w * marginRatio;
-  const marginY = h * marginRatio;
-
-  const minX = marginX;
-  const maxX = w - marginX;
-  const minY = marginY;
-  const maxY = h - marginY;
-
-  for (let i = 0; i < contours.size(); ++i) {
-    const cnt = contours.get(i);
-
-    let totalPoints = cnt.total();
-    let outsidePoints = 0;
-
-    for (let j = 0; j < totalPoints; ++j) {
-      const pt = cnt.intPtr(j, 0);
-      const x = pt[0];
-      const y = pt[1];
-
-      if (x < minX || x > maxX || y < minY || y > maxY) {
-        outsidePoints++;
-      }
-    }
-
-    const outsideRatio = outsidePoints / totalPoints;
-
-    if (outsideRatio > outsideThreshold) {
-      // Too much of this contour lies near the border — remove it
-      cv.drawContours(binaryMat, contours, i, new cv.Scalar(0), -1);
-    }
-
-    cnt.delete();
-  }
-
-  contours.delete();
-  hierarchy.delete();
-}
-
-function cleanCellEdges(binImg, lineThreshold = 0.5, scanDepth = 15, maxMisses = 2) {
+function cleanCellEdges(binImg, lineThreshold = 0.5, scanDepth = .1, maxMisses = 2) {
   const h = binImg.rows;
   const w = binImg.cols;
-
   const minLineLength = Math.floor(0.8 * w); // horizontal
   const minLineHeight = Math.floor(0.8 * h); // vertical
-
   const white = 255;
-  let misses = 0
-  // Clean horizontal top & bottom
+  let misses = 0;
+  
+  const scanDepthX = Math.round(scanDepth * w)
+  const scanDepthY = Math.round(scanDepth * h)
+  
+    // Clean horizontal top & bottom
   for (let y of [0, h - 1]) {
     for (let offset = 0; offset < h; offset++) {
       let rowY = y + (y === 0 ? offset : -offset);
@@ -299,7 +326,7 @@ function cleanCellEdges(binImg, lineThreshold = 0.5, scanDepth = 15, maxMisses =
       } else {
         misses++;
       }
-      if (offset > scanDepth && misses >= maxMisses) {
+      if (offset > scanDepthY && misses >= maxMisses) {
         break;
       }
     }
@@ -319,7 +346,7 @@ function cleanCellEdges(binImg, lineThreshold = 0.5, scanDepth = 15, maxMisses =
       } else {
         misses++;
       }
-      if (offset > scanDepth && misses >= maxMisses) {
+      if (offset > scanDepthX && misses >= maxMisses) {
         break;
       }
     }
@@ -327,9 +354,7 @@ function cleanCellEdges(binImg, lineThreshold = 0.5, scanDepth = 15, maxMisses =
 }
 
 
-function removeBorderArtifactsDEBUG(binaryMat, marginRatio, outsideThreshold, debugColorOutput = null) {
-  //drawEdgeSlicingLines(binaryMat);
-  
+function removeBorderArtifacts(binaryMat, marginRatio, outsideThreshold, debugColorOutput) {
   const contours = new cv.MatVector();
   const hierarchy = new cv.Mat();
   cv.findContours(binaryMat, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_NONE);
@@ -380,27 +405,52 @@ function removeBorderArtifactsDEBUG(binaryMat, marginRatio, outsideThreshold, de
   hierarchy.delete();
 }
 
-function drawEdgeSlicingLines(img, pixelDepth = 14, lineSpacing = 2) {
-  const height = img.rows;
-  const width = img.cols;
+async function recognizeDigits(cells) {
+  const results = [];
 
-  // Horizontal slicing lines from top and bottom inward
-  for (let y = 0; y < pixelDepth; y += lineSpacing) {
-    // From top
-    cv.line(img, new cv.Point(0, y), new cv.Point(width, y), new cv.Scalar(0, 0, 0, 255), 1);
+  const debugContainer = document.getElementById("debugOCR");
+  debugContainer.innerHTML = ""; // clear previous results
 
-    // From bottom
-    const bottomY = height - 1 - y;
-    cv.line(img, new cv.Point(0, bottomY), new cv.Point(width, bottomY), new cv.Scalar(0, 0, 0, 255), 1);
+  for (const cell of cells) {
+    // Preprocess cell image: grayscale + threshold + resize
+    let gray = new cv.Mat();
+    cv.cvtColor(cell.image, gray, cv.COLOR_RGBA2GRAY);
+    cv.threshold(gray, gray, 0, 255, cv.THRESH_BINARY_INV + cv.THRESH_OTSU);
+
+    cleanCellEdges(gray);
+
+    // Resize up for better OCR accuracy
+    let resized = new cv.Mat();
+    const scale = 2.0;
+    cv.resize(gray, resized, new cv.Size(0, 0), scale, scale, cv.INTER_LINEAR);
+
+    const colorDebug = new cv.Mat();
+    cv.cvtColor(resized, colorDebug, cv.COLOR_GRAY2RGBA);
+    removeBorderArtifacts(resized, 0.15, 0.75, colorDebug);
+    
+    // ToDo: get result
+    result = null;
+    /*results.push({
+      row: cell.row,
+      col: cell.col,
+      text: result.data.text.trim()
+    });*/
+
+
+    // Convert to canvas for Tesseract
+    const canvasDEBUG = document.createElement('canvas');
+    canvasDEBUG.width = colorDebug.cols;
+    canvasDEBUG.height = colorDebug.rows;
+    cv.imshow(canvasDEBUG, colorDebug);
+    const label = document.createElement("div");
+    label.style.display = "inline-block";
+    label.style.margin = "5px";
+    label.innerHTML = `<strong>${cell.row}:${cell.col} - ${result}</strong><br/>`;
+    label.appendChild(canvasDEBUG);
+    debugContainer.appendChild(label);
+
+    // Cleanup
+    gray.delete(); resized.delete(); cell.image.delete(); colorDebug.delete();
   }
-
-  // Vertical slicing lines from left and right inward
-  for (let x = 0; x < pixelDepth; x += lineSpacing) {
-    // From left
-    cv.line(img, new cv.Point(x, 0), new cv.Point(x, height), new cv.Scalar(0, 0, 0, 255), 1);
-
-    // From right
-    const rightX = width - 1 - x;
-    cv.line(img, new cv.Point(rightX, 0), new cv.Point(rightX, height), new cv.Scalar(0, 0, 0, 255), 1);
-  }
+  return results;
 }

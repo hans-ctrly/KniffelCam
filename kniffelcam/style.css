@@ -1,0 +1,14 @@
+#video {
+    position: absolute;
+}
+#overlayCanvas {
+    position: absolute;
+    zIndex: 10;
+}
+.videoContainer {
+    position: relative;
+}
+
+.live-view {
+    max-width: 100%;
+}

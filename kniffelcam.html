@@ -7,6 +7,7 @@
 
         <title>KNIFFEL CAM</title>
         <link rel="stylesheet" href="css/sub-page.css">
+        <link rel="stylesheet" href="kniffelcam/style.css">
         <link rel="icon" type="image/x-icon" href="/favicon.jpg">
         <meta http-equiv="content-type" content="text/html; charset=utf-8" >
         <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
@@ -15,16 +16,29 @@
         <button id="switchCamera">Switch Camera</button>
         <br><br>
         <div class="content">
-            <video id="video" autoplay playsinline style="max-width: 100%;"></video>
             <button id="snap">Capture</button>
-            <canvas id="debug" width="100%"></canvas>
-            <div id="debugCellRefinement" style="display: flex; flex-wrap: wrap; max-width: width=100%;"></div>
-            <canvas id="binary" width="100%" style="display: none"></canvas>
-            <canvas id="canvas" width="100%" style="display: none"></canvas>
-            <canvas id="debug" width="100%" style="display: none"></canvas>
-            <div id="debugOCR" style="display: flex; flex-wrap: wrap; max-width: width=100%;"></div>
-
-
+            <div class="videoContainer">
+                <video id="video" class="live-view" autoplay playsinline></video>
+                <canvas id="overlayCanvas" class="live-view"></canvas>
+                <canvas id="cameraCanvas" style="display: none"></canvas>
+            </div>
+            
+            <div class="debug-area">
+                <h2>Card detection</h2>
+                <canvas id="debugBinary"></canvas>
+            </div>
+            <div class="debug-area">
+                <h2>Table approximation</h2>
+                <canvas id="debugTable"></canvas>
+            </div>
+            <div class="debug-area">
+                <h2>Cell refinement</h2>
+                <div id="debugCellRefinement" style="display: flex; flex-wrap: wrap; max-width: width=100%;"></div>
+            </div>
+            <div class="debug-area">
+                <h2>Cell content detection</h2>
+                <div id="debugOCR" style="display: flex; flex-wrap: wrap; max-width: width=100%;"></div>
+            </div>
         </div>
         <script src="https://docs.opencv.org/4.7.0/opencv.js"></script>
         <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs/dist/tf.min.js"> </script>

@@ -13,13 +13,12 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 });
 
-function initApp() {
-  const video = document.getElementById('video');
-  const canvas = document.getElementById('canvas');
-  const ctx = canvas.getContext('2d');
-  const switchBtn = document.getElementById('switchCamera');
-  const cardWidth = 1900; //950
-  cardHeight = 2800; //1400
+async function initApp() {
+  const video = document.getElementById("video");
+  const cameraCanvas = document.getElementById("cameraCanvas");
+  const ctx = cameraCanvas.getContext("2d");
+  const switchBtn = document.getElementById("switchCamera");
+  const cardWidth = 950, cardHeight = 1400;
 
   // Define the Kniffel score sheet based on measured values
   const cellHeight = cardHeight * 0.0355;
@@ -65,127 +64,78 @@ function initApp() {
 
   let useFrontCamera = false;
   let currentStream;
-  startCamera(currentStream, useFrontCamera).then(stream => {
+  let overlayCtx;
+  startCamera(cameraCanvas, currentStream, useFrontCamera).then(({ stream, overlayCtx: returnedOverlayCtx}) => {
     currentStream = stream;
+    overlayCtx = returnedOverlayCtx;
   });
 
   // Button to sitch camera
   switchBtn.addEventListener('click', () => {
     useFrontCamera = !useFrontCamera;
-    startCamera(currentStream, useFrontCamera).then(stream => {
+    startCamera(cameraCanvas, currentStream, useFrontCamera).then(({ stream, overlayCtx: returnedOverlayCtx}) => {
       currentStream = stream;
+      overlayCtx = returnedOverlayCtx;
     });
   });
 
+  let srcCorners;  
+  const detectLoop = () => {
+    ctx.drawImage(video, 0, 0, cameraCanvas.width, cameraCanvas.height);
+    const imageData = ctx.getImageData(0, 0, cameraCanvas.width, cameraCanvas.height);
+    const src = cv.matFromImageData(imageData);
+        
+    srcCorners = detectCardCorners(src);
+    if (srcCorners && srcCorners.rows === 4) {
+      const corners = [];
+      for (let i = 0; i < 4; i++) {
+          corners.push({
+              x: srcCorners.data32F[i * 2], 
+              y: srcCorners.data32F[i * 2 + 1]
+          });
+      }
+      
+      // Draw the quadrilateral
+      clearOverlay(overlayCtx);
+      overlayCtx.strokeStyle = '#00ff00';
+      overlayCtx.lineWidth = 3;
+      overlayCtx.beginPath();
+      overlayCtx.moveTo(corners[0].x, corners[0].y);
+      for (let i = 1; i < 4; i++) {
+          overlayCtx.lineTo(corners[i].x, corners[i].y);
+      }
+      overlayCtx.closePath();
+      overlayCtx.stroke();
+      
+      // Draw corner circles
+      overlayCtx.fillStyle = '#00ff00';
+      for (let pt of corners) {
+          overlayCtx.beginPath();
+          overlayCtx.arc(pt.x, pt.y, 10, 0, 2 * Math.PI);
+          overlayCtx.fill();
+      }
+      srcCorners.delete(); // Clean up the OpenCV Mat
+    }
+    src.delete();
+    requestAnimationFrame(detectLoop);
+  };
+  detectLoop(ctx, cardWidth, cardHeight); // Start the card detection loop
+
   document.getElementById('snap').addEventListener('click', () => {
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(video, 0, 0, cameraCanvas.width, cameraCanvas.height);
+    const imageData = ctx.getImageData(0, 0, cameraCanvas.width, cameraCanvas.height);
     const src = cv.matFromImageData(imageData);
     stopCamera(currentStream);
-    detectTableAndDigits(src);
+    const cells = detectTableAndDigits(src, cardWidth, cardHeight);
+
+    recognizeDigits(cells).then(results => {
+      console.log("Recognizing!")
+      // TODO: Use results to update score sheet, calculate total, etc.
+    });
+    // TODO: use retun value to restart scanning if it failed
   });
 
-  function extractCells(warped, template, debugCanvasId = "debug") {
-    const cells = [];
-    const debugImg = warped.clone();
-
-    for (const cell of template) {
-      const rect = new cv.Rect(cell.x, cell.y, cell.w, cell.h);
-      const roi = warped.roi(rect);
-
-      // Try refining the found cell
-      const refinedContour = refineCellFromPaddedImage(roi);
-      if (!refinedContour) {
-        console.warn("Cell contour refinment failed");
-        return null;
-      }
-      let finalROI;
-      finalROI = roi.roi(refinedContour);
-
-      // Draw rectangle on debug image
-      const pt1 = new cv.Point(cell.x, cell.y);
-      const pt2 = new cv.Point(cell.x + cell.w, cell.y + cell.h);
-      cv.rectangle(debugImg, pt1, pt2, getRandomColor(), 2);
-
-      cells.push({
-        row: cell.row,
-        col: cell.col,
-        image: finalROI,
-      });
-    }
-    cv.imshow(debugCanvasId, debugImg);
-    debugImg.delete();
-    return cells;
-  }
-
-  async function recognizeDigitsTesseract(cells) {
-    const results = [];
-
-    const debugContainer = document.getElementById("debugOCR");
-    debugContainer.innerHTML = ""; // clear previous results
-
-    for (const cell of cells) {
-      // Preprocess cell image: grayscale + threshold + resize
-      let gray = new cv.Mat();
-      cv.cvtColor(cell.image, gray, cv.COLOR_RGBA2GRAY);
-      cv.threshold(gray, gray, 0, 255, cv.THRESH_BINARY_INV + cv.THRESH_OTSU);
-
-      cleanCellEdges(gray);
-
-      // Resize up for better OCR accuracy
-      let resized = new cv.Mat();
-      const scale = 2.0;
-      cv.resize(gray, resized, new cv.Size(0, 0), scale, scale, cv.INTER_LINEAR);
-
-      const colorDebug = new cv.Mat();
-      cv.cvtColor(resized, colorDebug, cv.COLOR_GRAY2RGBA);
-      removeBorderArtifactsDEBUG(resized, 0.15, 0.75, colorDebug);
-      
-      // Convert to canvas for Tesseract
-      const canvasDEBUG = document.createElement('canvas');
-      canvasDEBUG.width = colorDebug.cols;
-      canvasDEBUG.height = colorDebug.rows;
-      cv.imshow(canvasDEBUG, colorDebug);
-
-      cv.bitwise_not(resized, resized);
-
-      // Convert to canvas for Tesseract
-      const canvas = document.createElement('canvas');
-      canvas.width = resized.cols;
-      canvas.height = resized.rows;
-      cv.imshow(canvas, resized);
-
-      // OCR
-      const result = await Tesseract.recognize(canvas, 'eng', {
-        tessedit_char_whitelist: '0123456789/',
-        tessedit_pageseg_mode: Tesseract.PSM.SPARSE_TEXT
-      });
-
-      results.push({
-        row: cell.row,
-        col: cell.col,
-        text: result.data.text.trim()
-      });
-
-
-      // OPTIONAL: show in UI for debugging
-      const label = document.createElement("div");
-      label.style.display = "inline-block";
-      label.style.margin = "5px";
-      label.innerHTML = `<strong>${cell.row}:${cell.col} - ${result.data.text}</strong><br/>`;
-      label.appendChild(canvasDEBUG);
-      debugContainer.appendChild(label);
-
-      // Cleanup
-      gray.delete(); resized.delete(); cell.image.delete();
-    }
-
-    console.table(results);
-    return results;
-  }
-
-
-  async function recognizeDigits(cells) {
+/*  async function recognizeDigitsOLD(cells) {
     const results = [];
 
     const debugContainer = document.getElementById("debugOCR");
@@ -272,21 +222,19 @@ function initApp() {
     gray.delete();
     return digit;
   }
+    */
 
-  function detectTableAndDigits(src) {
-    const warped = detectCardCornersAndWarp(src, cardWidth, cardHeight);
-    cv.imshow("canvas", src);
+  function detectTableAndDigits(src, cardWidth, cardHeight) {
+    const srcCorners = detectCardCorners(src, true);
+    if (!srcCorners) {
+      return null;
+    }
+    const warped = warpCard(src, srcCorners, cardWidth, cardHeight);
     const cells = extractCells(warped, cellTemplate);
     if (!cells) {
       console.warn("Exctracting cells failed");
       return null;
     }
-
-    recognizeDigitsTesseract(cells).then(results => {
-      console.log("Recognizing!")
-      // TODO: Use results to update score sheet, calculate total, etc.
-    });
-    // TODO: use retun value to restart scanning if it failed
-    return 1;
+    return cells;
   }
 }
