@@ -24,12 +24,22 @@ async function initApp() {
   const cellHeight = cardHeight * 0.0355;
   const cellWidth = cardWidth * 0.10526
   const offsetUpperBlock = cardHeight * 0.23;
-  const offsetLowerBlock = cardHeight * 0.13;
+  const offsetLowerBlock = cardHeight * 0.14;
   const offsetLeft = 0.34 * cardWidth;
   const players = 2; //Number of player columns per scorecard
   //Extra size of each cell allow for inaccuracies in the warped image
-  const cellPaddingX = .15; 
-  const cellPaddingY = .25;
+  const cellPaddingX = .25; 
+  const cellPaddingY = .45;
+
+  // Prepare MNIST model
+  const modelURL = "kniffelcam/mnist-model.json";
+  let model;
+  async function loadModel() {
+    model = await tf.loadLayersModel(modelURL);
+    console.log("MNIST model loaded");
+  }
+  loadModel();
+
 
   const scoreFields = [
     {name: "Einser", upper: true},
@@ -127,104 +137,24 @@ async function initApp() {
     const src = cv.matFromImageData(imageData);
     stopCamera(currentStream);
     const cells = detectTableAndDigits(src, cardWidth, cardHeight);
-
-    recognizeDigits(cells).then(results => {
-      console.log("Recognizing!")
-      // TODO: Use results to update score sheet, calculate total, etc.
+    
+    // Restart camera if table recognition failed on snapped image 
+    if (!cells) {
+      startCamera(cameraCanvas, currentStream, useFrontCamera).then(({ stream, overlayCtx: returnedOverlayCtx}) => {
+      currentStream = stream;
+      overlayCtx = returnedOverlayCtx;
+      const overlayCanvas = document.getElementById("overlayCanvas");
+      overlayCanvas.style.display = "block";
     });
-    // TODO: use retun value to restart scanning if it failed
-  });
-
-/*  async function recognizeDigitsOLD(cells) {
-    const results = [];
-
-    const debugContainer = document.getElementById("debugOCR");
-    debugContainer.innerHTML = ""; // clear previous results
-
-    for (const cell of cells) {
-      let gray = new cv.Mat();
-      cv.cvtColor(cell.image, gray, cv.COLOR_RGBA2GRAY);
-      cv.threshold(gray, gray, 0, 255, cv.THRESH_BINARY_INV + cv.THRESH_OTSU);
-
-      const inputTensor = preprocessForMNIST(gray);
-      const digit = await predictDigit(inputTensor);
-
-      results.push({
-        row: cell.row,
-        col: cell.col,
-        text: digit
+    } else {
+      recognizeDigits(cells, model).then(results => {
+        console.log("Recognizing!")
+        // TODO: Use results to update score sheet, calculate total, etc.
       });
-
-      // Show in UI for debugging
-      const canvas = document.createElement('canvas');
-      canvas.width = gray.cols;
-      canvas.height = gray.rows;
-      cv.imshow(canvas, gray);
-
-      const label = document.createElement("div");
-      label.style.display = "inline-block";
-      label.style.margin = "5px";
-      label.innerHTML = `<strong>${cell.row}:${cell.col} - ${digit}</strong><br/>`;
-      label.appendChild(canvas);
-      debugContainer.appendChild(label);
-
-      // Cleanup
-      gray.delete(); cell.image.delete();
     }
-    return results;
-  }
+    });
 
-  const modelURL = "kniffelcam/mnist-model.json";
-  let model;
-  async function loadModel() {
-    model = await tf.loadLayersModel(modelURL);
-    console.log("MNIST model loaded");
-  }
-  //loadModel();
-
-  function preprocessForMNIST(cellMat) {
-    // Resize to 28x28
-    let resized = new cv.Mat();
-    cv.resize(cellMat, resized, new cv.Size(28, 28), 0, 0, cv.INTER_AREA);
-
-    // Convert to tensor
-    const imgData = [];
-    for (let y = 0; y < 28; y++) {
-      for (let x = 0; x < 28; x++) {
-        // Invert: white digit (0) on black (1) background
-        const pixel = resized.ucharPtr(y, x)[0];
-        imgData.push((255 - pixel) / 255);  // normalize to 0–1
-      }
-    }
-
-    const input = tf.tensor4d(imgData, [1, 28, 28, 1]);
-    resized.delete();
-    return input;
-  }
-
-  async function predictDigit(tensor) {
-    const prediction = model.predict(tensor);
-    const predictedValue = (await prediction.argMax(1).data())[0];
-    tensor.dispose();
-    prediction.dispose();
-    return predictedValue;
-  }
-
-  async function recognizeDigitFromCell(cellMat) {
-    // Preprocess: grayscale, threshold
-    let gray = new cv.Mat();
-    cv.cvtColor(cellMat, gray, cv.COLOR_RGBA2GRAY);
-    cv.threshold(gray, gray, 0, 255, cv.THRESH_BINARY_INV + cv.THRESH_OTSU);
-
-    const inputTensor = preprocessForMNIST(gray);
-    const digit = await predictDigit(inputTensor);
-
-    gray.delete();
-    return digit;
-  }
-    */
-
-  function detectTableAndDigits(src, cardWidth, cardHeight) {
+    function detectTableAndDigits(src, cardWidth, cardHeight) {
     const srcCorners = detectCardCorners(src, true);
     if (!srcCorners) {
       return null;
@@ -232,7 +162,7 @@ async function initApp() {
     const warped = warpCard(src, srcCorners, cardWidth, cardHeight);
     const cells = extractCells(warped, cellTemplate);
     if (!cells) {
-      console.warn("Exctracting cells failed");
+      console.warn("Extracting cells failed");
       return null;
     }
     return cells;

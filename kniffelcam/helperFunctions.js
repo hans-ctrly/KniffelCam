@@ -167,7 +167,7 @@ function extractCells(tableImage, template) {
       cv.rectangle(debugImg, pt1, pt2, getRandomColor(), 2);
       const whiteThreshold = .7;
       // Try refining the found cell
-      const refinedContour = refineCellFromPaddedImage(roi, whiteThreshold, debugContainer);
+      const refinedContour = refineCell(roi, whiteThreshold, debugContainer);
       if (!refinedContour) {
         debugContainer.innerHTML = "";
         return null;
@@ -186,11 +186,9 @@ function extractCells(tableImage, template) {
     return cells;
   }
 
-function refineCellFromPaddedImage(paddedMat, whiteThreshold, debugContainer) {
+function refineCell(paddedMat, whiteThreshold, debugContainer) {
   let gray = new cv.Mat();
   let binary = new cv.Mat();
-  let resultRect = null;
-
   // Grayscale and binary
   cv.cvtColor(paddedMat, gray, cv.COLOR_RGBA2GRAY);
   cv.threshold(gray, binary, 0, 255, cv.THRESH_BINARY + cv.THRESH_OTSU);
@@ -252,13 +250,21 @@ function refineCellFromPaddedImage(paddedMat, whiteThreshold, debugContainer) {
     x1 = verticalLines[0]
     x2 = verticalLines[verticalLines.length - 1];
 
-    resultRect = new cv.Rect(x1, y1, x2 - x1, y2 - y1);
+    const ratio = (x2 - x1) / (y2 - y1);
+    // skip if ratio of found cell seems weird
+    const maxRatioDeviance = .25;
+    const expectedRatio = 1.8;
+    if ((ratio > expectedRatio * (1 + maxRatioDeviance)) || (ratio < expectedRatio * (1 - maxRatioDeviance))) {
+      console.warn(`Skipped ratio of ${ratio} (Expected ratio is ${expectedRatio})`);
+      return null;
+    }
   } else {
+    // skip if no cell is found
     return null;
   }
 
-  
-  // Draw cell bounbdary on debug image
+  const resultRect = new cv.Rect(x1, y1, x2 - x1, y2 - y1);
+  // Draw cell boundary on debug image
   let debug = new cv.Mat();
   cv.cvtColor(binary, debug, cv.COLOR_GRAY2RGBA);
   const vec = new cv.MatVector();
@@ -301,9 +307,12 @@ function getRandomColor() {
     return [top[0], top[1], bottom[1], bottom[0]];
   }
 
-function cleanCellEdges(binImg, lineThreshold = 0.5, scanDepth = .1, maxMisses = 2) {
-  const h = binImg.rows;
-  const w = binImg.cols;
+function cleanCellEdges(binaryImage) {
+  const lineThreshold = 0.5;
+  const scanDepth = .1;
+  const maxMisses = 2;
+  const h = binaryImage.rows;
+  const w = binaryImage.cols;
   const minLineLength = Math.floor(0.8 * w); // horizontal
   const minLineHeight = Math.floor(0.8 * h); // vertical
   const white = 255;
@@ -318,10 +327,10 @@ function cleanCellEdges(binImg, lineThreshold = 0.5, scanDepth = .1, maxMisses =
       let rowY = y + (y === 0 ? offset : -offset);
       let whiteCount = 0;
       for (let x = 0; x < w; x++) {
-        if (binImg.ucharPtr(rowY, x)[0] === white) whiteCount++;
+        if (binaryImage.ucharPtr(rowY, x)[0] === white) whiteCount++;
       }
       if (whiteCount > lineThreshold * w) {
-        cv.line(binImg, new cv.Point(0, rowY), new cv.Point(w, rowY), new cv.Scalar(0), 1);
+        cv.line(binaryImage, new cv.Point(0, rowY), new cv.Point(w, rowY), new cv.Scalar(0), 1);
         misses = 0;
       } else {
         misses++;
@@ -338,10 +347,10 @@ function cleanCellEdges(binImg, lineThreshold = 0.5, scanDepth = .1, maxMisses =
       let colX = x + (x === 0 ? offset : -offset);
       let whiteCount = 0;
       for (let y = 0; y < h; y++) {
-        if (binImg.ucharPtr(y, colX)[0] === white) whiteCount++;
+        if (binaryImage.ucharPtr(y, colX)[0] === white) whiteCount++;
       }
       if (whiteCount > lineThreshold * h) {
-        cv.line(binImg, new cv.Point(colX, 0), new cv.Point(colX, h), new cv.Scalar(0), 1);
+        cv.line(binaryImage, new cv.Point(colX, 0), new cv.Point(colX, h), new cv.Scalar(0), 1);
         misses = 0;
       } else {
         misses++;
@@ -354,13 +363,15 @@ function cleanCellEdges(binImg, lineThreshold = 0.5, scanDepth = .1, maxMisses =
 }
 
 
-function removeBorderArtifacts(binaryMat, marginRatio, outsideThreshold, debugColorOutput) {
+function removeBorderArtifacts(binaryImage, debugColorOutput) {
+  marginRatio = 0.15; // Area of cell that is considered to be "outside"
+  outsideThreshold = 0.75; // Area of countour that must be "outside" for deletetion
   const contours = new cv.MatVector();
   const hierarchy = new cv.Mat();
-  cv.findContours(binaryMat, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_NONE);
+  cv.findContours(binaryImage, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_NONE);
 
-  const w = binaryMat.cols;
-  const h = binaryMat.rows;
+  const w = binaryImage.cols;
+  const h = binaryImage.rows;
 
   const marginX = w * marginRatio;
   const marginY = h * marginRatio;
@@ -395,7 +406,7 @@ function removeBorderArtifacts(binaryMat, marginRatio, outsideThreshold, debugCo
       }
 
       // Remove from binary (black it out)
-      cv.drawContours(binaryMat, contours, i, new cv.Scalar(0), -1); // black
+      cv.drawContours(binaryImage, contours, i, new cv.Scalar(0), -1); // black
     }
 
     cnt.delete();
@@ -405,7 +416,162 @@ function removeBorderArtifacts(binaryMat, marginRatio, outsideThreshold, debugCo
   hierarchy.delete();
 }
 
-async function recognizeDigits(cells) {
+function findDigitSplit(binaryImage, debugColorOutput) {
+  const w = binaryImage.cols;
+  const h = binaryImage.rows;
+  const white = 255;
+  const digitThreshold = .2;
+  const blankThreshold = .08;
+
+  let foundDigit = false;
+  let foundGap = false;
+  let split = null;
+  let splitQuality = 1; // 0 is best
+
+  // Search for two large masses of pixels separatet by blank space
+  // limit search to the center of the image
+  offset = Math.round(w * .35)
+  for (let x = 0; x < (w - offset); x++) {
+    let whiteCount = 0;
+    for (let y = 0; y < h; y++) {
+      if (binaryImage.ucharPtr(y, x)[0] === white) whiteCount++;
+    }
+    let whiteRatio = whiteCount / h;
+    if (whiteRatio > digitThreshold) {
+      foundDigit = true;
+    }
+
+    if ((whiteRatio < blankThreshold)) {
+      if (foundDigit && !foundGap) {
+        // Blank area after first digit found
+        split = x;
+        splitQuality = whiteRatio
+        foundDigit = false; // Reset conter
+        foundGap = true;
+      }
+      if (foundGap && (whiteRatio < splitQuality)) {
+        // Found better gap
+        split = x;
+        splitQuality = whiteRatio
+      }
+    }
+  }
+  if (debugColorOutput && split) {
+    cv.line(debugColorOutput, new cv.Point(split, 0), new cv.Point(split, h), new cv.Scalar(0, 0, 255, 255), 2);
+  }
+  return split;
+}
+
+function prepareDigitImages(binary, splitX, colorDebug) {
+  const digits = [];
+
+  // Define ROI rectangles depending on whether we're splitting
+  let halves;
+  if (splitX) {
+    halves = [new cv.Rect(0, 0, splitX, binary.rows),
+              new cv.Rect(splitX, 0, binary.cols - splitX, binary.rows)];
+  } else {
+    halves = [new cv.Rect(0, 0, binary.cols, binary.rows)]
+  }
+
+  for (let i = 0; i < halves.length; i++) {
+    const roi = binary.roi(halves[i]);
+
+    // Filter out mostly-black regions
+    const nonZeroPixels = cv.countNonZero(roi);
+    const pixelThreshold = binary.rows * binary.cols * .01;
+    if (nonZeroPixels < pixelThreshold) {
+      roi.delete();
+      continue;
+    }
+
+    // Find all contours
+    const contours = new cv.MatVector();
+    const hierarchy = new cv.Mat();
+    cv.findContours(roi, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+
+    // Compute a bounding box around all contours
+    let digitRect = null;
+
+    if (contours.size() > 0) {
+      let x1 = Number.MAX_VALUE, y1 = Number.MAX_VALUE;
+      let x2 = 0, y2 = 0;
+
+      for (let j = 0; j < contours.size(); j++) {
+        const cnt = contours.get(j);
+        const rect = cv.boundingRect(cnt);
+
+        x1 = Math.min(x1, rect.x);
+        y1 = Math.min(y1, rect.y);
+        x2 = Math.max(x2, rect.x + rect.width);
+        y2 = Math.max(y2, rect.y + rect.height);
+
+        cnt.delete();
+      }
+      digitRect = new cv.Rect(x1, y1, x2 - x1, y2 - y1);
+    }
+
+    contours.delete();
+    hierarchy.delete();
+
+    // Crop digit from image
+    const digitROI = roi.roi(digitRect);
+
+    // Resize to 20x20
+    let resized = new cv.Mat();
+    cv.resize(digitROI, resized, new cv.Size(20, 20), 0, 0, cv.INTER_AREA);
+
+    // Place into center of 28x28 canvas
+    let canvas = cv.Mat.zeros(28, 28, cv.CV_8UC1);
+    let x = Math.floor((28 - resized.cols) / 2);
+    let y = Math.floor((28 - resized.rows) / 2);
+    const centered = canvas.roi(new cv.Rect(x, y, resized.cols, resized.rows));
+    resized.copyTo(centered);
+    centered.delete();
+
+    if (colorDebug) {
+        const offsetX = halves[i].x;
+        const color = new cv.Scalar(i === 0 ? 255 : 128, 255, 0, 255);
+        cv.rectangle(
+          colorDebug,
+          new cv.Point(offsetX + digitRect.x, digitRect.y),
+          new cv.Point(offsetX + digitRect.x + digitRect.width, digitRect.y + digitRect.height),
+          color,
+          2
+        );
+      }
+
+    digits.push(canvas);
+
+    digitROI.delete();
+    resized.delete();
+    roi.delete();
+  }
+  return digits;
+}
+
+function preprocessForMNIST(digitImage) {
+  // Convert to tensor
+  const imgData = [];
+  for (let y = 0; y < 28; y++) {
+    for (let x = 0; x < 28; x++) {
+      const pixel = digitImage.ucharPtr(y, x)[0];
+      imgData.push(pixel);
+    }
+  }
+  const input = tf.tensor4d(imgData, [1, 28, 28, 1]);
+  return input;
+}
+
+async function predictDigit(model, tensor) {
+  const prediction = model.predict(tensor);
+  const predictedValue = (await prediction.argMax(1).data())[0];
+  tensor.dispose();
+  prediction.dispose();
+  return predictedValue;
+}
+
+async function recognizeDigits(cells, model) {
   const results = [];
 
   const debugContainer = document.getElementById("debugOCR");
@@ -414,30 +580,31 @@ async function recognizeDigits(cells) {
   for (const cell of cells) {
     // Preprocess cell image: grayscale + threshold + resize
     let gray = new cv.Mat();
+    let binary = new cv.Mat();
     cv.cvtColor(cell.image, gray, cv.COLOR_RGBA2GRAY);
-    cv.threshold(gray, gray, 0, 255, cv.THRESH_BINARY_INV + cv.THRESH_OTSU);
+    cv.threshold(gray, binary, 0, 255, cv.THRESH_BINARY_INV + cv.THRESH_OTSU);
 
-    cleanCellEdges(gray);
-
-    // Resize up for better OCR accuracy
-    let resized = new cv.Mat();
-    const scale = 2.0;
-    cv.resize(gray, resized, new cv.Size(0, 0), scale, scale, cv.INTER_LINEAR);
-
+    cleanCellEdges(binary);
     const colorDebug = new cv.Mat();
-    cv.cvtColor(resized, colorDebug, cv.COLOR_GRAY2RGBA);
-    removeBorderArtifacts(resized, 0.15, 0.75, colorDebug);
-    
-    // ToDo: get result
-    result = null;
-    /*results.push({
+    cv.cvtColor(binary, colorDebug, cv.COLOR_GRAY2RGBA);
+    removeBorderArtifacts(binary, colorDebug);
+    const split = findDigitSplit(binary, colorDebug);
+    const digits = prepareDigitImages(binary, split, colorDebug);
+
+    // Predict digit with MNIST model
+    result = "";
+    for (const digit of digits) {
+      tensor = preprocessForMNIST(digit);
+      result += await predictDigit(model, tensor)
+    }
+    results.push({
       row: cell.row,
       col: cell.col,
-      text: result.data.text.trim()
-    });*/
+      text: result
+    })
 
 
-    // Convert to canvas for Tesseract
+    // Convert to canvas
     const canvasDEBUG = document.createElement('canvas');
     canvasDEBUG.width = colorDebug.cols;
     canvasDEBUG.height = colorDebug.rows;
@@ -450,7 +617,7 @@ async function recognizeDigits(cells) {
     debugContainer.appendChild(label);
 
     // Cleanup
-    gray.delete(); resized.delete(); cell.image.delete(); colorDebug.delete();
+    gray.delete(); binary.delete(); cell.image.delete(); colorDebug.delete();
   }
   return results;
 }
