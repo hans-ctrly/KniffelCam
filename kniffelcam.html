@@ -13,31 +13,41 @@
         <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     </head>
     <body>
-        <button id="switchCamera">Switch Camera</button>
-        <br><br>
         <div class="content">
-            <button id="snap">Capture</button>
-            <div class="videoContainer">
-                <video id="video" class="live-view" autoplay playsinline></video>
-                <canvas id="overlayCanvas" class="live-view"></canvas>
-                <canvas id="cameraCanvas" style="display: none"></canvas>
+            <div id="cameraWindow">
+                <button id="snap">Capture</button>
+                <button id="TESTsnap">Test with jpeg</button>
+                <button id="switchCamera">Switch Camera</button>
+                <div id="videoContainer" class="video-container">
+                    <video id="video" class="live-view" autoplay playsinline></video>
+                    <canvas id="overlayCanvas" class="live-view"></canvas>
+                    <canvas id="cameraCanvas" style="display: none"></canvas>
+                </div>
             </div>
-            
-            <div class="debug-area">
-                <h2>Card detection</h2>
-                <canvas id="debugBinary"></canvas>
+            <div id="resultTableWindow" class="result-table-window">
+                <table id="resultTable" class="result-table">
+                </table> 
             </div>
-            <div class="debug-area">
-                <h2>Table approximation</h2>
-                <canvas id="debugTable"></canvas>
+            <div class="site-info-footer">
+                <button id="debug">🤖</button>
             </div>
-            <div class="debug-area">
-                <h2>Cell refinement</h2>
-                <div id="debugCellRefinement" style="display: flex; flex-wrap: wrap; max-width: width=100%;"></div>
-            </div>
-            <div class="debug-area">
-                <h2>Cell content detection</h2>
-                <div id="debugOCR" style="display: flex; flex-wrap: wrap; max-width: width=100%;"></div>
+            <div id="debugWindow" class="debug-window">
+                <div class="debug-area">
+                    <h2>Card detection</h2>
+                    <div id="debugBinary"></div>
+                </div>
+                <div class="debug-area">
+                    <h2>Table approximation</h2>
+                    <div id="debugTable" class="debug-table"></div>
+                </div>
+                <div class="debug-area">
+                    <h2>Cell refinement</h2>
+                    <div id="debugCellRefinement"></div>
+                </div>
+                <div class="debug-area">
+                    <h2>Cell content detection</h2>
+                    <div id="debugOCR"></div>
+                </div>
             </div>
         </div>
         <script src="https://docs.opencv.org/4.7.0/opencv.js"></script>

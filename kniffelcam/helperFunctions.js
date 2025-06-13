@@ -1,4 +1,5 @@
 async function startCamera(canvas, existingStream, useFrontCamera) {
+  const videoContainer = document.getElementById('videoContainer');
   if (existingStream) {
       existingStream.getTracks().forEach(track => track.stop());
   }
@@ -13,13 +14,13 @@ async function startCamera(canvas, existingStream, useFrontCamera) {
   try {
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
       video.srcObject = stream;
-      
       return new Promise((resolve) => {
           video.onloadedmetadata = () => {
               video.play();
               canvas.width = video.videoWidth;
               canvas.height = video.videoHeight;
-              
+              videoContainer.style.height = video.offsetHeight + 'px';
+              videoContainer.style.width = video.offsetWidth + 'px';
               // Initialize overlay AFTER canvas dimensions are set
               const overlayCtx = initializeOverlay(canvas);
               
@@ -60,18 +61,131 @@ function clearOverlay(overlayCtx) {
   }
 }
 
-function detectTableAndDigits(src, cardWidth, cardHeight, cellTemplate) {
-  const srcCorners = detectCardCorners(src);
+function createHtmlTable(scoreFields, players) {
+    const table = document.getElementById("resultTable");
+    table.innerHTML = "";
+    for (const [row, field] of scoreFields.entries()) {
+        const tableRow = document.createElement("tr");
+        tableRow.classList.add(field.classList);
+        for (let col = 0; col < players + 1; col++) {
+            tableCell = document.createElement("td");
+            if (field.readDigit) {
+                tableCell.classList.add("table-cell-edit")
+            } else {
+                tableCell.classList.add("table-cell-calculated")
+            }
+            if (col === 0) {
+                tableCell.innerHTML = field.displayName;
+            }
+            tableCell.id = field.idPrefix + col.toString();
+            tableRow.appendChild(tableCell)
+        }
+        table.appendChild(tableRow);
+    }
+}
+
+function createTableTemplate(cardWidth, cardHeight) {
+    // Define the Kniffel score sheet based on measured values
+  const cellHeight = cardHeight * 0.0355;
+  const cellWidth = cardWidth * 0.10526
+
+  // Add some randomness here to allow for inaccuracies in the printed card
+  const randomFactor = (Math.random() * 0.01) - 0.005 // random float between -0.005 and 0.005
+  const offsetUpperBlock = cardHeight * (0.23 + randomFactor);
+  const offsetLowerBlock = cardHeight * (0.135 + randomFactor);
+  const offsetLeft = 0.34 * cardWidth;
+  const players = 2; //Number of player columns per scorecard
+  //Extra size of each cell allow for inaccuracies in the warped image
+  const cellPaddingX = .25; 
+  const cellPaddingY = .45;
+
+  
+  const scoreFields = [
+    {name: "Header", displayName: "", idPrefix: "h", 
+        classList: "result-table-header", upper: true, readDigit: false},
+    {name: "Einser", displayName: "&#x2680;&#x2680;&#x2680", idPrefix: "0", 
+        classList: "result-table-row", upper: true, readDigit: true},
+    {name: "Zweier", displayName: "&#x2681;&#x2681;&#x2681;", idPrefix: "1", 
+        classList: "result-table-row", upper: true, readDigit: true},
+    {name: "Dreier", displayName: "&#x2682;&#x2682;&#x2682;", idPrefix: "2", 
+        classList: "result-table-row", upper: true, readDigit: true},
+    {name: "Vierer", displayName: "&#x2683;&#x2683;&#x2683;", idPrefix: "3", 
+        classList: "result-table-row", upper: true, readDigit: true},
+    {name: "Fünfer", displayName: "&#x2684;&#x2684;&#x2684;", idPrefix: "4", 
+        classList: "result-table-row", upper: true, readDigit: true},
+    {name: "Sechser", displayName: "&#x2685;&#x2685;&#x2685;", idPrefix: "5", 
+        classList: "result-table-row", upper: true, readDigit: true},
+    {name: "Sum upper", displayName: "Total", idPrefix: "u", 
+        classList: "result-table-row", upper: true, readDigit: false},
+    {name: "Bonus", displayName: "Bonus", idPrefix: "b", 
+        classList: "result-table-row", upper: true, readDigit: false},
+    {name: "Total upper", displayName: "Total", idPrefix: "tu", 
+        classList: "result-table-row", upper: true, readDigit: false},
+    {name: "Separator", displayName: "", idPrefix: "s", 
+        classList: "section-separator", upper: true, readDigit: false},
+    {name: "Dreierpasch", displayName: "Dreierpash", idPrefix: "6", 
+        classList: "result-table-row", upper: false, readDigit: true},
+    {name: "Viererpasch", displayName: "Viererpasch", idPrefix: "7", 
+        classList: "result-table-row", upper: false, readDigit: true},
+    {name: "Full-House", displayName: "Full-House", idPrefix: "8", 
+        classList: "result-table-row", upper: false, readDigit: true},
+    {name: "Kleine Straße", displayName: "Kleine Straße", idPrefix: "9", 
+        classList: "result-table-row", upper: false, readDigit: true},
+    {name: "Große Straße", displayName: "Große Straße", idPrefix: "10", 
+        classList: "result-table-row", upper: false, readDigit: true},
+    {name: "Kniffel", displayName: "Kniffel", idPrefix: "11", 
+        classList: "result-table-row", upper: false, readDigit: true},
+    {name: "Chance", displayName: "Chance", idPrefix: "12", 
+        classList: "result-table-row", upper: false, readDigit: true},
+    {name: "Sum lower", displayName: "Total lower", idPrefix: "u", 
+        classList: "result-table-row", upper: true, readDigit: false},
+    {name: "Total upper 2", displayName: "Total upper", idPrefix: "tuz", 
+        classList: "result-table-row", upper: true, readDigit: false},
+    {name: "Final score", displayName: "Final", idPrefix: "f", 
+        classList: "result-table-row", upper: true, readDigit: false},
+  ];
+
+  // Show table in frontend
+  createHtmlTable(scoreFields, players);
+
+  // Create table image overlay for cell detection
+  let cellTemplate = [];
+  let row = 0
+  for (const field of scoreFields) {
+    if (field.readDigit) {
+        for (let col = 0; col < players; col++) {
+          const x = ((col * cellWidth) + offsetLeft) - (cellPaddingX * cellWidth) ;
+          const yOffset = field.upper ? offsetUpperBlock : offsetUpperBlock + offsetLowerBlock;
+          const y = (row * cellHeight) + yOffset - (cellPaddingY * cellHeight)
+          cellTemplate.push({row: row, 
+                             col: col, 
+                             x: Math.round(x), 
+                             y: Math.round(y),
+                             w: Math.round(cellWidth + (2 * cellPaddingX * cellWidth)), 
+                             h: Math.round(cellHeight  + (2 * cellPaddingY * cellHeight))});
+        }
+    row++;
+    }
+  }
+  return cellTemplate;
+}
+
+
+function detectTableAndDigits(src, cardWidth, cardHeight) {
+  const srcCorners = detectCardCorners(src, true);
   if (!srcCorners) {
     return null;
   }
-  
   const warped = warpCard(src, srcCorners, cardWidth, cardHeight);
+  const cellTemplate = createTableTemplate(cardWidth, cardHeight);
   const cells = extractCells(warped, cellTemplate);
   if (!cells) {
+    console.warn("Extracting cells failed");
     return null;
+  } else {
+    console.log("Succesfull refinement of table cells");
+    return cells;
   }
-  return cells;
 }
 
 function detectCardCorners(src, debugPrint = false) {
@@ -122,14 +236,19 @@ function detectCardCorners(src, debugPrint = false) {
     ]);
   
     if (debugPrint) {
+      // Draw found corners on debug image
       let debugBinary = new cv.Mat();
       cv.cvtColor(binary, debugBinary, cv.COLOR_GRAY2RGBA);
-      // draw found corners on debug image
       for (let pt of sorted) {
         cv.circle(debugBinary, new cv.Point(pt.x, pt.y), 10, new cv.Scalar(0, 255, 0, 255), -1);
       }
-      cv.imshow("debugBinary", debugBinary);
-      debugBinary.delete(); 
+      const canvasDEBUG = document.createElement('canvas');
+      canvasDEBUG.width = debugBinary.cols;
+      canvasDEBUG.height = debugBinary.rows;
+      cv.imshow(canvasDEBUG, debugBinary);
+      const debugContainer = document.getElementById("debugBinary");
+      debugContainer.innerHTML = ""; // Clear image from previous tries
+      debugContainer.appendChild(canvasDEBUG);
     }
     biggestContour.delete();
   }
@@ -155,36 +274,49 @@ function warpCard(src, srcCorners, cardWidth, cardHeight) {
 function extractCells(tableImage, template) {
     const cells = [];
     const debugImg = tableImage.clone();
-    const debugContainer = document.getElementById("debugCellRefinement");
-
+    let failed = false;
     for (const cell of template) {
       const rect = new cv.Rect(cell.x, cell.y, cell.w, cell.h);
       const roi = tableImage.roi(rect);
-
+     
       // Draw approximate cells on debug image
       const pt1 = new cv.Point(cell.x, cell.y);
       const pt2 = new cv.Point(cell.x + cell.w, cell.y + cell.h);
       cv.rectangle(debugImg, pt1, pt2, getRandomColor(), 2);
-      const whiteThreshold = .7;
+      
       // Try refining the found cell
+      const debugContainer = document.getElementById("debugCellRefinement");
+      const whiteThreshold = .7;
       const refinedContour = refineCell(roi, whiteThreshold, debugContainer);
       if (!refinedContour) {
         debugContainer.innerHTML = "";
-        return null;
+        failed = true;
+        continue;
       }
-      let finalROI;
-      finalROI = roi.roi(refinedContour);
 
+      const finalROI = roi.roi(refinedContour);
       cells.push({
         row: cell.row,
         col: cell.col,
         image: finalROI,
       });
     }
-    cv.imshow("debugTable", debugImg);
+    
+    const canvasDEBUG = document.createElement('canvas');
+    canvasDEBUG.width = debugImg.cols;
+    canvasDEBUG.height = debugImg.rows;
+    cv.imshow(canvasDEBUG, debugImg);
+    const debugContainer = document.getElementById("debugTable");
+    debugContainer.innerHTML = ""; // Clear image from previous tries
+    debugContainer.appendChild(canvasDEBUG);
+    
     debugImg.delete();
-    return cells;
-  }
+    if (failed) {
+        return null;
+    } else {
+        return cells;
+    }
+}
 
 function refineCell(paddedMat, whiteThreshold, debugContainer) {
   let gray = new cv.Mat();
@@ -274,10 +406,10 @@ function refineCell(paddedMat, whiteThreshold, debugContainer) {
   canvasDEBUG.height = debug.rows;
   cv.imshow(canvasDEBUG, debug);
   const debugImg = document.createElement("div");
+  debugImg.classList.add("debug-cell");
   debugImg.appendChild(canvasDEBUG);
   debugContainer.appendChild(debugImg);
   debug.delete();
-
   gray.delete(); binary.delete();
 
   return resultRect;
@@ -307,7 +439,7 @@ function getRandomColor() {
     return [top[0], top[1], bottom[1], bottom[0]];
   }
 
-function cleanCellEdges(binaryImage) {
+function cleanCellEdges(binaryImage, colorDebug) {
   const lineThreshold = 0.5;
   const scanDepth = .1;
   const maxMisses = 2;
@@ -331,6 +463,8 @@ function cleanCellEdges(binaryImage) {
       }
       if (whiteCount > lineThreshold * w) {
         cv.line(binaryImage, new cv.Point(0, rowY), new cv.Point(w, rowY), new cv.Scalar(0), 1);
+        // Also show on debug image
+        cv.line(colorDebug, new cv.Point(0, rowY), new cv.Point(w, rowY), new cv.Scalar(255, 255, 0, 255), 1);
         misses = 0;
       } else {
         misses++;
@@ -351,6 +485,8 @@ function cleanCellEdges(binaryImage) {
       }
       if (whiteCount > lineThreshold * h) {
         cv.line(binaryImage, new cv.Point(colX, 0), new cv.Point(colX, h), new cv.Scalar(0), 1);
+         // Also show on debug image
+        cv.line(colorDebug, new cv.Point(colX, 0), new cv.Point(colX, h), new cv.Scalar(255, 255, 0, 255), 1);
         misses = 0;
       } else {
         misses++;
@@ -464,7 +600,6 @@ function findDigitSplit(binaryImage, debugColorOutput) {
 
 function prepareDigitImages(binary, splitX, colorDebug) {
   const digits = [];
-
   // Define ROI rectangles depending on whether we're splitting
   let halves;
   if (splitX) {
@@ -531,7 +666,7 @@ function prepareDigitImages(binary, splitX, colorDebug) {
 
     if (colorDebug) {
         const offsetX = halves[i].x;
-        const color = new cv.Scalar(i === 0 ? 255 : 128, 255, 0, 255);
+        const color = new cv.Scalar(0, 255, 0, 255);
         cv.rectangle(
           colorDebug,
           new cv.Point(offsetX + digitRect.x, digitRect.y),
@@ -551,7 +686,7 @@ function prepareDigitImages(binary, splitX, colorDebug) {
 }
 
 function preprocessForMNIST(digitImage) {
-  // Convert to tensor
+  // Convert to tensor with shape 28x28
   const imgData = [];
   for (let y = 0; y < 28; y++) {
     for (let x = 0; x < 28; x++) {
@@ -563,61 +698,115 @@ function preprocessForMNIST(digitImage) {
   return input;
 }
 
-async function predictDigit(model, tensor) {
+async function predictDigitMNIST(model, tensor) {
+  // Normalize pixels to 0|1
+  tensor = tensor.div(255.0);
+  // Predict
   const prediction = model.predict(tensor);
+  // Get prediction and confidence from softmax probability distribution
   const predictedValue = (await prediction.argMax(1).data())[0];
+  const probabilities = await prediction.data();
+  const confidence = probabilities[predictedValue];
+
   tensor.dispose();
   prediction.dispose();
-  return predictedValue;
+  return {predictedValue: predictedValue, confidence: confidence, probabilities: probabilities};
+}
+
+ async function predictDigitTesseract(cellMat) {
+  cv.bitwise_not(cellMat, cellMat);
+  
+  // Resize (Tesseract is supposedly better on larger images)
+  let dsize = new cv.Size(64, 64);
+  cv.resize(cellMat, cellMat, dsize, 0, 0, cv.INTER_LINEAR);
+
+  // Convert to canvas
+  const canvas = document.createElement('canvas');
+  canvas.width = cellMat.cols;
+  canvas.height = cellMat.rows;
+  cv.imshow(canvas, cellMat);
+  // OCR
+  const result = await Tesseract.recognize(canvas, 'eng', {
+    tessedit_char_whitelist: '0123456789/',
+    config: {
+      tessedit_char_whitelist: '0123456789/',
+      tessedit_pageseg_mode: Tesseract.PSM.SINGLE_CHAR
+    }
+  });
+  return result.data.text.trim();
 }
 
 async function recognizeDigits(cells, model) {
   const results = [];
-
   const debugContainer = document.getElementById("debugOCR");
   debugContainer.innerHTML = ""; // clear previous results
-
   for (const cell of cells) {
-    // Preprocess cell image: grayscale + threshold + resize
-    let gray = new cv.Mat();
-    let binary = new cv.Mat();
+    const gray = new cv.Mat();
+    const binary = new cv.Mat();
+    // Preprocess cell image: grayscale + threshold
     cv.cvtColor(cell.image, gray, cv.COLOR_RGBA2GRAY);
     cv.threshold(gray, binary, 0, 255, cv.THRESH_BINARY_INV + cv.THRESH_OTSU);
 
-    cleanCellEdges(binary);
+    // Prepare debug image
     const colorDebug = new cv.Mat();
-    cv.cvtColor(binary, colorDebug, cv.COLOR_GRAY2RGBA);
+    cv.cvtColor(binary, colorDebug, cv.COLOR_GRAY2RGBA)
+    
+    // Try to remove cell boundaries that might still be the edges of the image
+    cleanCellEdges(binary, colorDebug);
     removeBorderArtifacts(binary, colorDebug);
     const split = findDigitSplit(binary, colorDebug);
     const digits = prepareDigitImages(binary, split, colorDebug);
 
     // Predict digit with MNIST model
-    result = "";
+    let result = "";
+    let resultTesseract = "";
+    let resultText = "";
+    let confidence = 0;
     for (const digit of digits) {
       tensor = preprocessForMNIST(digit);
-      result += await predictDigit(model, tensor)
+      prediction = await predictDigitMNIST(model, tensor);
+      confidence += prediction.confidence;
+      // If it's the first of two digits and the model predicts a 7
+      // We can be pretty sure it's actually a 1
+      // (But we only force the correction if 1 is the second next likely)
+      if ((digits.length == 2) && (result == "") && (prediction.predictedValue == 7)) {
+        result += 1;
+        resultText += `${prediction.predictedValue}(${prediction.confidence.toFixed(2)}%)-Replaced by 1`;  
+      } else {
+        result += prediction.predictedValue;
+        resultText += `${prediction.predictedValue}(${prediction.confidence.toFixed(2)}%) `;
+      }
+      // Optionally try with tesseract, but it's very slow and the results are worse
+      //resultTesseract += await predictDigitTesseract(digit);
     }
+    
+    confidence = confidence / digits.length;
     results.push({
       row: cell.row,
       col: cell.col,
-      text: result
+      text: result,
+      confidence: confidence
     })
 
-
-    // Convert to canvas
+    // Show debug image with removed elements, digits split and bounding rectangles
     const canvasDEBUG = document.createElement('canvas');
     canvasDEBUG.width = colorDebug.cols;
     canvasDEBUG.height = colorDebug.rows;
     cv.imshow(canvasDEBUG, colorDebug);
     const label = document.createElement("div");
-    label.style.display = "inline-block";
-    label.style.margin = "5px";
-    label.innerHTML = `<strong>${cell.row}:${cell.col} - ${result}</strong><br/>`;
+    label.classList.add("debug-digit");
+    label.innerHTML = `<strong>${cell.row}:${cell.col} - ${resultText} - ${resultTesseract}</strong><br/>`;
     label.appendChild(canvasDEBUG);
     debugContainer.appendChild(label);
 
-    // Cleanup
+    // Clean up
     gray.delete(); binary.delete(); cell.image.delete(); colorDebug.delete();
   }
   return results;
+}
+
+function showResults(results, cameraWindow, resultTableWindow) {
+    console.table(results);
+    cameraWindow.style.display = "none";
+    resultTableWindow.style.display = "block"; 
 }
