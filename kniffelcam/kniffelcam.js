@@ -156,7 +156,7 @@ async function initApp() {
       modelLoadingPromise.then(() => {
         return recognizeDigits(cells, model);
       }).then(results => {
-          showResults(results, cameraWindow, resultTableWindow);
+          appState.hasFinished = true;
       });
     } else {
       // Keep camera running if detection failed
@@ -184,9 +184,9 @@ async function initApp() {
       if (cells) {
         stopCameraIfActive();
         modelLoadingPromise.then(() => {
-          return recognizeDigits(cells, model);
+          return recognizeDigits(cells, model, cameraWindow, resultTableWindow);
         }).then(results => {
-          showResults(results, cameraWindow, resultTableWindow);
+          appState.hasFinished = true;
         });
       } else {
         console.warn("Test image detection failed");
@@ -198,7 +198,7 @@ async function initApp() {
     img.onerror = () => {
       console.error("Failed to load test image");
     };
-    img.src = 'kniffelcam/testImage.jpeg';
+    img.src = "kniffelcam/testImage.jpeg";
   });
 
   // Debug window functions
@@ -214,11 +214,11 @@ async function initApp() {
   function closeDebugWindow() {
     debugWindow.style.display = "none";
     if (appState.hasFinished) {
-        resultTableWindow.style.display = "block";    
+      resultTableWindow.style.display = "block";    
     } else {
-        cameraWindow.style.display = "block";
+      cameraWindow.style.display = "block";
+      ensureCameraActive();
     }
-    ensureCameraActive();
   }
 
   // Listen for popstate to detect back button
@@ -226,13 +226,25 @@ async function initApp() {
     closeDebugWindow();
   });
 
-  debugWindow.addEventListener('click', (e) => {
-    if (e.target === debugWindow) {
+  // Listen for popstate to detect back button
+  window.addEventListener('popstate', (event) => {
+    closeDebugWindow();
+  });
+
+  document.getElementById('closeDebug').addEventListener('click', () => {
       closeDebugWindow();
-    }
   });
 
   document.getElementById('debug').addEventListener('click', () => {
     openDebugWindow();
+  });
+  document.getElementById('debugResults').addEventListener('click', () => {
+    openDebugWindow();
+  });
+
+  document.getElementById('restart').addEventListener('click', () => {
+    ensureCameraActive();
+    cameraWindow.style.display = "block";
+    resultTableWindow.style.display = "none";
   });
 }

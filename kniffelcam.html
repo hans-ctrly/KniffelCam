@@ -15,9 +15,19 @@
     <body>
         <div class="content">
             <div id="cameraWindow">
-                <button id="snap">Capture</button>
-                <button id="TESTsnap">Test with jpeg</button>
-                <button id="switchCamera">Switch Camera</button>
+                <div class="menu-buttons">
+                    <div class="capture-button">
+                        <button id="snap" class="menu-option menu-option-active">Capture</button>
+                    </div>
+                    <div class="player-input">
+                        <input class="players-input" type="number" id="nPlayers" max="6" value="2">
+                    </div>
+                    <button id="TESTsnap" style="display: none">Test with jpeg</button>
+                    <div class="settings-buttons">
+                        <button id="switchCamera" class="menu-option menu-option-active">📷</button>
+                        <button id="debug" class="menu-option menu-option-active">🤖</button>
+                    </div>
+                </div>
                 <div id="videoContainer" class="video-container">
                     <video id="video" class="live-view" autoplay playsinline></video>
                     <canvas id="overlayCanvas" class="live-view"></canvas>
@@ -25,16 +35,20 @@
                 </div>
             </div>
             <div id="resultTableWindow" class="result-table-window">
+                <div class="menu-buttons">
+                    <button id="restart" class="menu-option menu-option-active">NEW</button>
+                    <button id="debugResults" class="menu-option menu-option-active">🤖</button>
+                </div>
                 <table id="resultTable" class="result-table">
                 </table> 
             </div>
-            <div class="site-info-footer">
-                <button id="debug">🤖</button>
-            </div>
             <div id="debugWindow" class="debug-window">
+                <div class="menu-buttons-right">
+                    <button id="closeDebug" class="menu-option menu-option-active">CLOSE</button>
+                </div>
                 <div class="debug-area">
                     <h2>Card detection</h2>
-                    <div id="debugBinary"></div>
+                    <div class="debugBinary"" id="debugBinary"></div>
                 </div>
                 <div class="debug-area">
                     <h2>Table approximation</h2>
@@ -55,7 +69,7 @@
         <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4.0.2/dist/tesseract.min.js"></script>
         <script src="kniffelcam/helperFunctions.js"></script>
         <script src="kniffelcam/kniffelcam.js?v=1"></script>
-        <script src="https://cdn.jsdelivr.net/npm/eruda"></script>
-        <script>eruda.init();</script>
+        <!--<script src="https://cdn.jsdelivr.net/npm/eruda"></script>
+        <script>eruda.init();</script>-->
     </body>
 </html>

@@ -62,25 +62,61 @@ function clearOverlay(overlayCtx) {
 }
 
 function createHtmlTable(scoreFields, players) {
-    const table = document.getElementById("resultTable");
-    table.innerHTML = "";
-    for (const [row, field] of scoreFields.entries()) {
-        const tableRow = document.createElement("tr");
-        tableRow.classList.add(field.classList);
-        for (let col = 0; col < players + 1; col++) {
-            tableCell = document.createElement("td");
-            if (field.readDigit) {
-                tableCell.classList.add("table-cell-edit")
-            } else {
-                tableCell.classList.add("table-cell-calculated")
-            }
-            if (col === 0) {
-                tableCell.innerHTML = field.displayName;
-            }
-            tableCell.id = field.idPrefix + col.toString();
-            tableRow.appendChild(tableCell)
+  const table = document.getElementById("resultTable");
+  table.innerHTML = "";
+  for (const [row, field] of scoreFields.entries()) {
+    const tableRow = document.createElement("tr");
+    if (field.classList) {
+      tableRow.classList.add(field.classList);
+    } else {
+      tableRow.classList.add("result-table-row");
+    }
+    if (!field.readDigit) {
+      tableRow.classList.add("row-calculated");
+    }
+    for (let col = 0; col < players + 1; col++) {
+      const elementType = "td"
+      let tableCell;
+      let input = true;
+      if (field.name === "Header") {
+        tableCell = document.createElement("th");
+        if (col != 0) {
+          tableCell.innerHTML = col;
         }
-        table.appendChild(tableRow);
+        input = false;
+      } else {
+        tableCell = document.createElement("td");
+      }
+      if (field.name === "Separator") {
+        input = false;
+      }
+      if (col === 0) {
+        tableCell.innerHTML = field.displayName;
+        input = false;
+      } else {
+        if (field.readDigit) {
+          tableCell.classList.add("table-cell-edit")
+        } else {
+          tableCell.classList.add("table-cell-calculated")
+        }
+      }
+      if (input) {
+        const tableCellInput = document.createElement("input");
+        tableCellInput.type = "number";
+        tableCellInput.placeholder = "/";
+        tableCellInput.id = field.idPrefix + col.toString();
+        if (!field.readDigit) {
+          tableCellInput.readOnly = true;
+        }
+        if (field.expectedValue) {
+          tableCellInput.dataset.expectedValue = field.expectedValue;
+        }
+        tableCellInput.addEventListener("input", () => calculateScore(col));
+        tableCell.appendChild(tableCellInput)
+      }
+      tableRow.appendChild(tableCell)
+    }
+    table.appendChild(tableRow);
     }
 }
 
@@ -94,7 +130,7 @@ function createTableTemplate(cardWidth, cardHeight) {
   const offsetUpperBlock = cardHeight * (0.23 + randomFactor);
   const offsetLowerBlock = cardHeight * (0.135 + randomFactor);
   const offsetLeft = 0.34 * cardWidth;
-  const players = 2; //Number of player columns per scorecard
+  const players = Number(document.getElementById("nPlayers").value); //Number of player columns per scorecard
   //Extra size of each cell allow for inaccuracies in the warped image
   const cellPaddingX = .25; 
   const cellPaddingY = .45;
@@ -104,45 +140,47 @@ function createTableTemplate(cardWidth, cardHeight) {
     {name: "Header", displayName: "", idPrefix: "h", 
         classList: "result-table-header", upper: true, readDigit: false},
     {name: "Einser", displayName: "&#x2680;&#x2680;&#x2680", idPrefix: "0", 
-        classList: "result-table-row", upper: true, readDigit: true},
+        upper: true, readDigit: true},
     {name: "Zweier", displayName: "&#x2681;&#x2681;&#x2681;", idPrefix: "1", 
-        classList: "result-table-row", upper: true, readDigit: true},
+        upper: true, readDigit: true},
     {name: "Dreier", displayName: "&#x2682;&#x2682;&#x2682;", idPrefix: "2", 
-        classList: "result-table-row", upper: true, readDigit: true},
+        upper: true, readDigit: true},
     {name: "Vierer", displayName: "&#x2683;&#x2683;&#x2683;", idPrefix: "3", 
-        classList: "result-table-row", upper: true, readDigit: true},
+        upper: true, readDigit: true},
     {name: "Fünfer", displayName: "&#x2684;&#x2684;&#x2684;", idPrefix: "4", 
-        classList: "result-table-row", upper: true, readDigit: true},
+        upper: true, readDigit: true},
     {name: "Sechser", displayName: "&#x2685;&#x2685;&#x2685;", idPrefix: "5", 
-        classList: "result-table-row", upper: true, readDigit: true},
-    {name: "Sum upper", displayName: "Total", idPrefix: "u", 
-        classList: "result-table-row", upper: true, readDigit: false},
+        upper: true, readDigit: true},
+    {name: "Sum upper", displayName: "Summe", idPrefix: "u", 
+        upper: true, readDigit: false},
     {name: "Bonus", displayName: "Bonus", idPrefix: "b", 
-        classList: "result-table-row", upper: true, readDigit: false},
-    {name: "Total upper", displayName: "Total", idPrefix: "tu", 
-        classList: "result-table-row", upper: true, readDigit: false},
-    {name: "Separator", displayName: "", idPrefix: "s", 
+        upper: true, readDigit: false},
+    {name: "Total upper", displayName: "Gesamt", idPrefix: "tu", 
+        upper: true, readDigit: false},
+    {name: "Separator", displayName: " ", idPrefix: "s", 
         classList: "section-separator", upper: true, readDigit: false},
-    {name: "Dreierpasch", displayName: "Dreierpash", idPrefix: "6", 
-        classList: "result-table-row", upper: false, readDigit: true},
-    {name: "Viererpasch", displayName: "Viererpasch", idPrefix: "7", 
-        classList: "result-table-row", upper: false, readDigit: true},
+    {name: "Dreierpasch", displayName: "Dreier-pasch", idPrefix: "6", 
+        upper: false, readDigit: true},
+    {name: "Viererpasch", displayName: "Vierer-pasch", idPrefix: "7", 
+        upper: false, readDigit: true},
     {name: "Full-House", displayName: "Full-House", idPrefix: "8", 
-        classList: "result-table-row", upper: false, readDigit: true},
+        upper: false, readDigit: true, expectedValue: "25"},
     {name: "Kleine Straße", displayName: "Kleine Straße", idPrefix: "9", 
-        classList: "result-table-row", upper: false, readDigit: true},
+        upper: false, readDigit: true, expectedValue: "30"},
     {name: "Große Straße", displayName: "Große Straße", idPrefix: "10", 
-        classList: "result-table-row", upper: false, readDigit: true},
+        upper: false, readDigit: true, expectedValue: "40"},
     {name: "Kniffel", displayName: "Kniffel", idPrefix: "11", 
-        classList: "result-table-row", upper: false, readDigit: true},
+        upper: false, readDigit: true, expectedValue: "50"},
     {name: "Chance", displayName: "Chance", idPrefix: "12", 
-        classList: "result-table-row", upper: false, readDigit: true},
-    {name: "Sum lower", displayName: "Total lower", idPrefix: "u", 
-        classList: "result-table-row", upper: true, readDigit: false},
-    {name: "Total upper 2", displayName: "Total upper", idPrefix: "tuz", 
-        classList: "result-table-row", upper: true, readDigit: false},
+        upper: false, readDigit: true},
+    {name: "Separator", displayName: " ", idPrefix: "sl", 
+        classList: "section-separator", upper: true, readDigit: false},
+    {name: "Sum lower", displayName: "Gesamt unten", idPrefix: "l", 
+        upper: true, readDigit: false},
+    {name: "Total upper 2", displayName: "gesamt oben", idPrefix: "tuz", 
+        upper: true, readDigit: false},
     {name: "Final score", displayName: "Final", idPrefix: "f", 
-        classList: "result-table-row", upper: true, readDigit: false},
+        upper: true, readDigit: false},
   ];
 
   // Show table in frontend
@@ -162,7 +200,8 @@ function createTableTemplate(cardWidth, cardHeight) {
                              x: Math.round(x), 
                              y: Math.round(y),
                              w: Math.round(cellWidth + (2 * cellPaddingX * cellWidth)), 
-                             h: Math.round(cellHeight  + (2 * cellPaddingY * cellHeight))});
+                             h: Math.round(cellHeight  + (2 * cellPaddingY * cellHeight)),
+                            });
         }
     row++;
     }
@@ -740,6 +779,11 @@ async function recognizeDigits(cells, model) {
   const results = [];
   const debugContainer = document.getElementById("debugOCR");
   debugContainer.innerHTML = ""; // clear previous results
+
+  // Switch frontend view
+  cameraWindow.style.display = "none";
+  resultTableWindow.style.display = "block"; 
+
   for (const cell of cells) {
     const gray = new cv.Mat();
     const binary = new cv.Mat();
@@ -757,27 +801,48 @@ async function recognizeDigits(cells, model) {
     const split = findDigitSplit(binary, colorDebug);
     const digits = prepareDigitImages(binary, split, colorDebug);
 
+    // Find this cells Html table input
+    const cellHtmlInput = document.getElementById((cell.row).toString() + (cell.col + 1).toString());
+
     // Predict digit with MNIST model
     let result = "";
     let resultTesseract = "";
     let resultText = "";
     let confidence = 0;
+        
     for (const digit of digits) {
       tensor = preprocessForMNIST(digit);
       prediction = await predictDigitMNIST(model, tensor);
       confidence += prediction.confidence;
+
+      result += prediction.predictedValue;
+      resultText += `${prediction.predictedValue}(${prediction.confidence.toFixed(2)}%) `;
+
       // If it's the first of two digits and the model predicts a 7
-      // We can be pretty sure it's actually a 1
-      // (But we only force the correction if 1 is the second next likely)
-      if ((digits.length == 2) && (result == "") && (prediction.predictedValue == 7)) {
-        result += 1;
-        resultText += `${prediction.predictedValue}(${prediction.confidence.toFixed(2)}%)-Replaced by 1`;  
-      } else {
-        result += prediction.predictedValue;
-        resultText += `${prediction.predictedValue}(${prediction.confidence.toFixed(2)}%) `;
+      // we can be pretty sure it's actually a 1 and force this as the result
+      if ((digits.length === 2) && (result === "7")) {
+        result = "1";
+        resultText += "[replaced by 1] ";  
       }
+
       // Optionally try with tesseract, but it's very slow and the results are worse
       //resultTesseract += await predictDigitTesseract(digit);
+    }
+
+    // If it's a field that has a predetermined value (e.g. 25 for Full-House)
+    // we can be pretty sure that it's this value. But we assume it's a "/" if a 1 is predicted
+    const expectedValue = cellHtmlInput.getAttribute("data-expected-value");
+    if (expectedValue) {
+      if (result != "1") {
+        result = expectedValue;
+        resultText += `[replaced by ${expectedValue}]`;
+      }
+    }
+
+    // If the result is 1 but it's not the "1"s field, then we assume it's a "/"
+    if (cell.row > 0 && result === "1") {
+      result = "";
+      resultText += "[replaced by /]"
     }
     
     confidence = confidence / digits.length;
@@ -788,6 +853,11 @@ async function recognizeDigits(cells, model) {
       confidence: confidence
     })
 
+    // Write predicted value to HTML table
+    cellHtmlInput.value = result;
+    cellHtmlInput.dataset.confidence = confidence;
+    calculateScore(cell.col + 1);
+
     // Show debug image with removed elements, digits split and bounding rectangles
     const canvasDEBUG = document.createElement('canvas');
     canvasDEBUG.width = colorDebug.cols;
@@ -795,7 +865,7 @@ async function recognizeDigits(cells, model) {
     cv.imshow(canvasDEBUG, colorDebug);
     const label = document.createElement("div");
     label.classList.add("debug-digit");
-    label.innerHTML = `<strong>${cell.row}:${cell.col} - ${resultText} - ${resultTesseract}</strong><br/>`;
+    label.innerHTML = `<strong>${cell.row}:${cell.col} - ${resultText}</strong><br/>`;
     label.appendChild(canvasDEBUG);
     debugContainer.appendChild(label);
 
@@ -805,8 +875,34 @@ async function recognizeDigits(cells, model) {
   return results;
 }
 
-function showResults(results, cameraWindow, resultTableWindow) {
-    console.table(results);
-    cameraWindow.style.display = "none";
-    resultTableWindow.style.display = "block"; 
+function calculateScore(column) {
+  let totalUpper = 0;
+  let totalLower = 0;
+  
+  // Calculate upper
+  for (let row = 0; row < 6; row++) {
+    totalUpper += Number(document.getElementById(row.toString() + column.toString()).value);
+  }
+  // Set upper sum
+  document.getElementById("u" + column.toString()).value = totalUpper;
+  // Calculate bonus
+  if (totalUpper >= 63) {
+    totalUpper += 35;
+    document.getElementById("b" + column.toString()).value = 35;
+  } else {
+    document.getElementById("b" + column.toString()).value = null;
+  }
+  // Set upper total
+  document.getElementById("tu" + column.toString()).value = totalUpper;
+  document.getElementById("tuz" + column.toString()).value = totalUpper;
+
+  // Calculate lower
+  for (let row = 6; row < 13; row++) {
+    totalLower += Number(document.getElementById(row.toString() + column.toString()).value);
+  }
+  // Set lower sum
+  document.getElementById("l" + column.toString()).value = totalUpper;
+  
+  // Set final
+  document.getElementById("f" + column.toString()).value = totalUpper;
 }

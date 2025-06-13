@@ -8,6 +8,30 @@
     position: relative;
 }
 
+.menu-buttons {
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+}
+
+#nPlayers {
+    box-sizing: content-box;
+    border: solid black;
+    border-radius: 5px;
+    margin: 0 1em 0 1em;
+    padding: 1em;
+    box-shadow: 5px 5px white;
+    font-weight: 1000;
+    width: 10px;
+    height: auto;
+}
+
+.menu-buttons-right {
+    width: 100%;
+    display: flex;
+    justify-content: flex-end;
+}
+
 .site-info-footer {
     position: relative;
 }
@@ -20,27 +44,33 @@
     display: none;
 }
 
-.debug-digit, .debug-cell {
+.debug-cell {
     display: inline-block;
     margin: 10px;
 }
 
-.debug-table canvas {
-    max-width: 460px;
+.debug-digit {
+    display: block;
+    margin: 10px;
 }
 
-.result-table-window {
-    background: rgba(255, 255, 255, 0.95);
-    border-radius: 20px;
-    padding: 30px;
-    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
-    backdrop-filter: blur(10px);
-    border: 2px solid rgba(59, 130, 246, 0.2);
-    overflow: hidden;
+.debug-cell canvas {
+    width: 100px;
 }
 
-.result-table {
+.debug-table, .debugBinary {
     width: 100%;
+    max-width: 460px;  
+}
+
+.debug-table canvas, .debugBinary canvas {
+    width: 100%;
+    height: auto;
+    display: block;
+}
+
+/* After here it's all for the results table */
+.result-table {
     border-collapse: separate;
     border-spacing: 0;
     border-radius: 15px;
@@ -68,21 +98,23 @@
     border-top-right-radius: 15px;
 }
 
+.row-calculated:first-child {
+    background: red;
+}
+
 .table-cell-calculated {
-    background-color: rgba(60, 60, 60, 0.05);
+    background-color: rgb(245, 245, 245);
 }
 
 .result-table-row td {
     padding: 14px 12px;
     text-align: center;
     border-bottom: 1px solid rgba(59, 130, 246, 0.1);
-    transition: all 0.3s ease;
-    font-weight: 500;
-    font-size: 15px;
+    width: 50px;
 }
 
 .table-cell-edit:hover {
-    background-color: rgba(60, 130, 245, 0.05);
+    background-color: rgb(235, 240, 255);
     transform: translateY(-1px);
 }
 
@@ -99,7 +131,7 @@
 }
 
 .result-table-row td:not(:last-child) {
-    border-right: solid blue 1px;
+    border-right: 1px solid #3b82f6;
 }
 
 .result-table-row td:first-child {
@@ -109,6 +141,11 @@
     border-right: 2px solid #3b82f6;
     font-size: 18px;
     width: 75px;
+}
+
+.row-calculated td:first-child {
+    background: linear-gradient(135deg, #f0f0f0, #f2f2f2);
+    color: black;
 }
 
 .result-table-row td[data-value=""]:not(:first-child) {
@@ -125,51 +162,43 @@
     font-weight: bold;
 }
 
-/* Special styling for total and bonus rows */
-.result-table-row:nth-last-child(3) td:first-child,
-.result-table-row:nth-last-child(2) td:first-child {
-    background: linear-gradient(135deg, #fef3c7, #fcd34d);
-    color: #92400e;
-    font-weight: 800;
-}
-
-.result-table-row:nth-last-child(1) td:first-child {
-    background: linear-gradient(135deg, #dcfce7, #86efac);
-    color: #166534;
-    font-weight: 800;
-}
-
-/* Dice symbols styling */
+/* Dice symbols */
 td:first-child {
     font-size: 20px;
     letter-spacing: 2px;
 }
 
-@keyframes fadeInUp {
-    from {
-        opacity: 0;
-        transform: translateY(30px);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
+/* Input fields*/
+input[type=number]::-webkit-inner-spin-button,
+input[type=number]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
 }
 
-/* Responsive design */
-@media (max-width: 768px) {
-    .result-table-window {
-        padding: 20px;
-        margin: 10px;
-    }
-    
-    .result-table-header th,
-    .result-table-row td {
-        padding: 10px 8px;
-        font-size: 14px;
-    }
-    
-    td:first-child {
-        font-size: 16px;
-    }
+input[type=number] {
+  -moz-appearance: textfield;
+}
+
+input[type=number] {
+  width: 100%;
+  height: 100%;
+  border: none;
+  box-sizing: border-box;
+  font-size: 1em;
+  background-color: inherit;
+}
+
+input[type=number]:focus {
+  outline: none;
+}
+
+input[readonly] {
+  pointer-events: none;
+  background-color: transparent;
+  border: none;
+  color: inherit;
+  cursor: default;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
 }
