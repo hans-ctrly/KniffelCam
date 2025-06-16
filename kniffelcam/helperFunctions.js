@@ -120,22 +120,58 @@ function createHtmlTable(scoreFields, players) {
     }
 }
 
-function createTableTemplate(cardWidth, cardHeight) {
-    // Define the Kniffel score sheet based on measured values
-  const cellHeight = cardHeight * 0.0355;
+function createTableTemplate(scoreFields, cardWidth, cardHeight,
+                             players, scanningFactorX, scanningFactorY) {
+  // Define the Kniffel score sheet based on measured values
+  const cellHeight = cardHeight * 0.0355  
   const cellWidth = cardWidth * 0.10526
-
-  // Add some randomness here to allow for inaccuracies in the printed card
-  const randomFactor = (Math.random() * 0.01) - 0.005 // random float between -0.005 and 0.005
-  const offsetUpperBlock = cardHeight * (0.23 + randomFactor);
-  const offsetLowerBlock = cardHeight * (0.135 + randomFactor);
-  const offsetLeft = 0.34 * cardWidth;
-  const players = Number(document.getElementById("nPlayers").value); //Number of player columns per scorecard
+  let offsetUpperBlock = cardHeight * (0.215 + scanningFactorY);
+  const offsetLowerBlock = cardHeight * 0.135;
+  const offsetLeft = cardWidth * (0.32 + scanningFactorX);
   //Extra size of each cell allow for inaccuracies in the warped image
-  const cellPaddingX = .25; 
-  const cellPaddingY = .45;
+  const cellPaddingX = 0.1;
+  const cellPaddingY = 0.3;
 
-  
+  // Create table image overlay for cell detection
+  let cellTemplate = [];
+  for (let col = 0; col < players; col++) {
+    let fieldRow = 0;
+    offsetUpperBlock -= cardHeight / 500;
+    for (const field of scoreFields) {
+      if (field.readDigit) {
+        const x = Math.round(((col * cellWidth) + offsetLeft) - (cellPaddingX * cellWidth));
+        const yOffset = field.upper ? offsetUpperBlock : offsetUpperBlock + offsetLowerBlock;
+        const y = Math.round((fieldRow * cellHeight) + yOffset - (cellPaddingY * cellHeight));
+
+        let width = Math.round(cellWidth + (2 * cellPaddingX * cellWidth));
+        if ((x + width) > cardWidth) {
+          width = cardWidth - x;
+        }
+
+        cellTemplate.push({
+          row: fieldRow,
+          col: col,
+          x: x,
+          y: y,
+          w: width,
+          h: Math.round(cellHeight + (2 * cellPaddingY * cellHeight)),
+        });
+
+        fieldRow++;
+      }
+    }
+  }
+  return cellTemplate;
+}
+
+
+function detectTableAndDigits(src, cardWidth, cardHeight) {
+  const srcCorners = detectCardCorners(src, true);
+  if (!srcCorners) {
+    return null;
+  }
+
+  // define tbale template
   const scoreFields = [
     {name: "Header", displayName: "", idPrefix: "h", 
         classList: "result-table-header", upper: true, readDigit: false},
@@ -183,46 +219,29 @@ function createTableTemplate(cardWidth, cardHeight) {
         upper: true, readDigit: false},
   ];
 
-  // Show table in frontend
-  createHtmlTable(scoreFields, players);
-
-  // Create table image overlay for cell detection
-  let cellTemplate = [];
-  let row = 0
-  for (const field of scoreFields) {
-    if (field.readDigit) {
-        for (let col = 0; col < players; col++) {
-          const x = ((col * cellWidth) + offsetLeft) - (cellPaddingX * cellWidth) ;
-          const yOffset = field.upper ? offsetUpperBlock : offsetUpperBlock + offsetLowerBlock;
-          const y = (row * cellHeight) + yOffset - (cellPaddingY * cellHeight)
-          cellTemplate.push({row: row, 
-                             col: col, 
-                             x: Math.round(x), 
-                             y: Math.round(y),
-                             w: Math.round(cellWidth + (2 * cellPaddingX * cellWidth)), 
-                             h: Math.round(cellHeight  + (2 * cellPaddingY * cellHeight)),
-                            });
-        }
-    row++;
-    }
-  }
-  return cellTemplate;
-}
-
-
-function detectTableAndDigits(src, cardWidth, cardHeight) {
-  const srcCorners = detectCardCorners(src, true);
-  if (!srcCorners) {
-    return null;
-  }
+  // Warp image to table dimensions
   const warped = warpCard(src, srcCorners, cardWidth, cardHeight);
-  const cellTemplate = createTableTemplate(cardWidth, cardHeight);
-  const cells = extractCells(warped, cellTemplate);
+  // Get number of player columns per scorecard
+  const players = Number(document.getElementById("nPlayers").value);
+  let cells;
+  let cellTemplate;
+  // Move the table overlay around until all cells can be succesfully identified
+  for (let offsetX = 0; offsetX < 11; offsetX++) {
+    for (let offsetY = 0; offsetY < 11; offsetY++) {
+        cellTemplate = createTableTemplate(scoreFields, cardWidth, cardHeight,
+                                           players, offsetX / 250, offsetY / 500);
+        cells = extractCells(warped, cellTemplate);
+        if (cells) {break}
+    }
+    if (cells) {break}
+  }
   if (!cells) {
     console.warn("Extracting cells failed");
     return null;
   } else {
     console.log("Succesfull refinement of table cells");
+    // Show table in frontend
+    createHtmlTable(scoreFields, players);
     return cells;
   }
 }
@@ -314,6 +333,10 @@ function extractCells(tableImage, template) {
     const cells = [];
     const debugImg = tableImage.clone();
     let failed = false;
+    
+    const cellDebugContainer = document.getElementById("debugCellRefinement");
+    cellDebugContainer.innerHTML = "";
+      
     for (const cell of template) {
       const rect = new cv.Rect(cell.x, cell.y, cell.w, cell.h);
       const roi = tableImage.roi(rect);
@@ -324,11 +347,9 @@ function extractCells(tableImage, template) {
       cv.rectangle(debugImg, pt1, pt2, getRandomColor(), 2);
       
       // Try refining the found cell
-      const debugContainer = document.getElementById("debugCellRefinement");
-      const whiteThreshold = .7;
-      const refinedContour = refineCell(roi, whiteThreshold, debugContainer);
+      const whiteThreshold = .65;
+      const refinedContour = refineCell(roi, whiteThreshold, cellDebugContainer);
       if (!refinedContour) {
-        debugContainer.innerHTML = "";
         failed = true;
         continue;
       }
@@ -411,7 +432,18 @@ function refineCell(paddedMat, whiteThreshold, debugContainer) {
     }
   }
 
+  // Prepare debug image
+  let debug = new cv.Mat();
+  cv.cvtColor(binary, debug, cv.COLOR_GRAY2RGBA);
+  const vec = new cv.MatVector();
+  const canvasDEBUG = document.createElement('canvas');
+  canvasDEBUG.width = debug.cols;
+  canvasDEBUG.height = debug.rows;
+  const debugImg = document.createElement("div");
+  debugImg.classList.add("debug-cell");
+  
   let x1, y1, x2, y2;
+  let resultRect = null;
   // Sort and get bounding box
   if (horizontalLines.length >= 2 && verticalLines.length >= 2) {
     horizontalLines.sort((a, b) => a - b);
@@ -420,36 +452,24 @@ function refineCell(paddedMat, whiteThreshold, debugContainer) {
     y2 = horizontalLines[horizontalLines.length - 1];
     x1 = verticalLines[0]
     x2 = verticalLines[verticalLines.length - 1];
+    
+    resultRect = new cv.Rect(x1, y1, x2 - x1, y2 - y1);
+    // Draw cell boundary on debug image
+    cv.rectangle(debug, new cv.Point(x1, y1), new cv.Point(x2, y2), new cv.Scalar(0, 255, 0, 255), 2);
 
-    const ratio = (x2 - x1) / (y2 - y1);
-    // skip if ratio of found cell seems weird
+
+    // Skip if ratio of found cell seems weird
     const maxRatioDeviance = .25;
     const expectedRatio = 1.8;
+    const ratio = (x2 - x1) / (y2 - y1);
     if ((ratio > expectedRatio * (1 + maxRatioDeviance)) || (ratio < expectedRatio * (1 - maxRatioDeviance))) {
-      console.warn(`Skipped ratio of ${ratio} (Expected ratio is ${expectedRatio})`);
-      return null;
+      resultRect = null;
     }
-  } else {
-    // skip if no cell is found
-    return null;
   }
-
-  const resultRect = new cv.Rect(x1, y1, x2 - x1, y2 - y1);
-  // Draw cell boundary on debug image
-  let debug = new cv.Mat();
-  cv.cvtColor(binary, debug, cv.COLOR_GRAY2RGBA);
-  const vec = new cv.MatVector();
-  cv.rectangle(debug, new cv.Point(x1, y1), new cv.Point(x2, y2), new cv.Scalar(0, 255, 0, 255), 2);
-  const canvasDEBUG = document.createElement('canvas');
-  canvasDEBUG.width = debug.cols;
-  canvasDEBUG.height = debug.rows;
   cv.imshow(canvasDEBUG, debug);
-  const debugImg = document.createElement("div");
-  debugImg.classList.add("debug-cell");
   debugImg.appendChild(canvasDEBUG);
   debugContainer.appendChild(debugImg);
-  debug.delete();
-  gray.delete(); binary.delete();
+  debug.delete(); gray.delete(); binary.delete();
 
   return resultRect;
 }

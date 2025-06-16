@@ -15,18 +15,21 @@
     <body>
         <div class="content">
             <div id="cameraWindow">
-                <div class="menu-buttons">
+                <div class="menu-buttons-right">
+                    <div class="settings-buttons">
+                        <button id="switchCamera" class="menu-option menu-option-active">SWITCH CAMERA</button>
+                        <button id="debug" class="menu-option menu-option-active">DEBUG</button>
+                    </div>
+                </div>
+                <div class="menu-buttons-left">
                     <div class="capture-button">
-                        <button id="snap" class="menu-option menu-option-active">Capture</button>
+                        <button id="snap" class="menu-option menu-option-active">Capture 📷</button>
                     </div>
                     <div class="player-input">
-                        <input class="players-input" type="number" id="nPlayers" max="6" value="2">
+                        # PLAYERS
+                        <input class="players-input" type="number" id="nPlayers" min="1" max="6" value="2">
                     </div>
                     <button id="TESTsnap" style="display: none">Test with jpeg</button>
-                    <div class="settings-buttons">
-                        <button id="switchCamera" class="menu-option menu-option-active">📷</button>
-                        <button id="debug" class="menu-option menu-option-active">🤖</button>
-                    </div>
                 </div>
                 <div id="videoContainer" class="video-container">
                     <video id="video" class="live-view" autoplay playsinline></video>
@@ -37,7 +40,7 @@
             <div id="resultTableWindow" class="result-table-window">
                 <div class="menu-buttons">
                     <button id="restart" class="menu-option menu-option-active">NEW</button>
-                    <button id="debugResults" class="menu-option menu-option-active">🤖</button>
+                    <button id="debugResults" class="menu-option menu-option-active">DEBUG</button>
                 </div>
                 <table id="resultTable" class="result-table">
                 </table> 
