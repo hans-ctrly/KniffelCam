@@ -29,7 +29,7 @@
                         # PLAYERS
                         <input class="players-input" type="number" id="nPlayers" min="1" max="6" value="2">
                     </div>
-                    <button id="TESTsnap" style="display: none">Test with jpeg</button>
+                    <button id="TESTsnap" style="display: none" class="menu-option menu-option-active">Test with jpeg</button>
                 </div>
                 <div id="videoContainer" class="video-container">
                     <video id="video" class="live-view" autoplay playsinline></video>
@@ -51,27 +51,27 @@
                 </div>
                 <div class="debug-area">
                     <h2>Card detection</h2>
-                    <div class="debugBinary"" id="debugBinary"></div>
+                    <div id="debugBinary" class="debugBinary debug-area-content"></div>
                 </div>
                 <div class="debug-area">
                     <h2>Table approximation</h2>
-                    <div id="debugTable" class="debug-table"></div>
+                    <div id="debugTable" class="debug-table debug-area-content"></div>
                 </div>
                 <div class="debug-area">
                     <h2>Cell refinement</h2>
-                    <div id="debugCellRefinement"></div>
+                    <div id="debugCellRefinement" class="debug-area-content"></div>
                 </div>
                 <div class="debug-area">
                     <h2>Cell content detection</h2>
-                    <div id="debugOCR"></div>
+                    <div id="debugOCR" class="debug-area-content"></div>
                 </div>
             </div>
         </div>
         <script src="https://docs.opencv.org/4.7.0/opencv.js"></script>
         <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs/dist/tf.min.js"> </script>
-        <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4.0.2/dist/tesseract.min.js"></script>
         <script src="kniffelcam/helperFunctions.js"></script>
         <script src="kniffelcam/kniffelcam.js?v=1"></script>
+        <!-- <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4.0.2/dist/tesseract.min.js"></script> -->
         <!--<script src="https://cdn.jsdelivr.net/npm/eruda"></script>
         <script>eruda.init();</script>-->
     </body>

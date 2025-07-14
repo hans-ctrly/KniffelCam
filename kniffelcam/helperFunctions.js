@@ -171,7 +171,7 @@ function detectTableAndDigits(src, cardWidth, cardHeight) {
     return null;
   }
 
-  // define tbale template
+  // define table template
   const scoreFields = [
     {name: "Header", displayName: "", idPrefix: "h", 
         classList: "result-table-header", upper: true, readDigit: false},
@@ -252,7 +252,7 @@ function detectCardCorners(src, debugPrint = false) {
   let contours = new cv.MatVector();
   let hierarchy = new cv.Mat();
 
-  // Blur (smoothes out noise and improves the resulting binary)
+  // Blur (smooth out noise and improve the resulting binary)
   // fyi: Canny() does already include a Gaussian blur, but it works way better with this extra step
   cv.GaussianBlur(src, blurred, new cv.Size(5, 5), 0);
   // Turn to binary image
@@ -684,7 +684,7 @@ function prepareDigitImages(binary, splitX, colorDebug) {
     const hierarchy = new cv.Mat();
     cv.findContours(roi, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
 
-    // Compute a bounding box around all contours
+    // Draw a bounding box around all contours
     let digitRect = null;
 
     if (contours.size() > 0) {
@@ -876,6 +876,8 @@ async function recognizeDigits(cells, model) {
     // Write predicted value to HTML table
     cellHtmlInput.value = result;
     cellHtmlInput.dataset.confidence = confidence;
+
+    // (re-)calculate player score
     calculateScore(cell.col + 1);
 
     // Show debug image with removed elements, digits split and bounding rectangles
@@ -921,8 +923,8 @@ function calculateScore(column) {
     totalLower += Number(document.getElementById(row.toString() + column.toString()).value);
   }
   // Set lower sum
-  document.getElementById("l" + column.toString()).value = totalUpper;
+  document.getElementById("l" + column.toString()).value = totalLower;
   
   // Set final
-  document.getElementById("f" + column.toString()).value = totalUpper;
+  document.getElementById("f" + column.toString()).value = totalLower + totalUpper;
 }

@@ -1,4 +1,4 @@
-// Start app after CV and the DOM have finished loading
+// Start app after OpenCV and the DOM have finished loading
 document.addEventListener("DOMContentLoaded", () => {
   if (typeof cv !== 'undefined') {
     if (cv.onRuntimeInitialized) {
@@ -31,7 +31,6 @@ async function initApp() {
   }
   modelLoadingPromise = loadModel();
 
-  // Centralized camera state management
   let appState = {
     useFrontCamera: false,
     currentStream: null,
@@ -41,7 +40,7 @@ async function initApp() {
     hasFinished: false
   };
 
-  // Centralized camera management functions
+  // Camera management functions
   async function ensureCameraActive() {
     if (!appState.isActive) {
       const result = await startCamera(cameraCanvas, appState.currentStream, appState.useFrontCamera);
@@ -81,7 +80,7 @@ async function initApp() {
     await ensureCameraActive();
   }
 
-  // Detection loop - now separate from camera management
+  // Detection loop
   function startDetectionLoop() {
     if (appState.detectLoopRunning) return;
     
@@ -127,7 +126,7 @@ async function initApp() {
             appState.overlayCtx.arc(pt.x, pt.y, 10, 0, 2 * Math.PI);
             appState.overlayCtx.fill();
         }
-        srcCorners.delete(); // Clean up the OpenCV Mat
+        srcCorners.delete();
       }
       src.delete();
       requestAnimationFrame(detectLoop);
@@ -139,10 +138,10 @@ async function initApp() {
   // Initialize camera on startup
   ensureCameraActive();
 
-  // Button to switch camera - simplified
+  // Button to switch camera
   switchBtn.addEventListener('click', switchCamera);
 
-  // Snap button - no longer needs to restart camera on failure
+  // Button to capture image and start processing
   captureBtn.addEventListener("click", () => {
     ctx.drawImage(video, 0, 0, cameraCanvas.width, cameraCanvas.height);
     const imageData = ctx.getImageData(0, 0, cameraCanvas.width, cameraCanvas.height);
@@ -151,7 +150,7 @@ async function initApp() {
     const cells = detectTableAndDigits(src, cardWidth, cardHeight);
     
     if (cells) {
-      // Stop camera if recognition succeeded
+      // Stop camera if detection succeeded
       stopCameraIfActive();
       modelLoadingPromise.then(() => {
         return recognizeDigits(cells, model);
@@ -164,7 +163,7 @@ async function initApp() {
     }
   });
 
-  // Test snap button - simplified
+  // Test button
   document.getElementById("TESTsnap").addEventListener("click", () => {
     const img = new Image();
     const scaleFactor = 0.5;
@@ -207,7 +206,7 @@ async function initApp() {
     debugWindow.style.display = "block";
     cameraWindow.style.display = "none";
     resultTableWindow.style.display = "none";
-    // Push a new state to the browser history
+    // Push a new state to the browser history (enables back button)
     history.pushState({ modalOpen: true }, '', "#debugView");
   }
 
@@ -218,6 +217,16 @@ async function initApp() {
     } else {
       cameraWindow.style.display = "block";
       ensureCameraActive();
+    }
+  }
+
+  function resetAppState() {
+    appState.hasFinished = false;
+    cameraWindow.style.display = "block";
+    resultTableWindow.style.display = "none";
+    const debugAreas = document.getElementsByClassName("debug-area-content");
+    for (let area of debugAreas) {
+      area.innerHTML = "";
     }
   }
 
@@ -232,7 +241,7 @@ async function initApp() {
   });
 
   document.getElementById('closeDebug').addEventListener('click', () => {
-      closeDebugWindow();
+    closeDebugWindow();
   });
 
   document.getElementById('debug').addEventListener('click', () => {
@@ -243,8 +252,7 @@ async function initApp() {
   });
 
   document.getElementById('restart').addEventListener('click', () => {
+    resetAppState();
     ensureCameraActive();
-    cameraWindow.style.display = "block";
-    resultTableWindow.style.display = "none";
   });
 }
