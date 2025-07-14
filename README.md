@@ -1,7 +1,8 @@
 # KniffelCam
 
 This is a JavaScript webapp that tries to read the digits from a handwritten Kniffel (Yahtzee) scorecard and helps calculate the results.
-Go ahead and test it here: [https://ctrly.de/kniffelcam.html](https://ctrly.de/kniffelcam.html)
+
+(Go ahead and test it here: [https://ctrly.de/kniffelcam.html](https://ctrly.de/kniffelcam.html) 😊)
 
 The function can be separated into 5 sections:
  1. Detect the scorecard (using the OpenCV library)
