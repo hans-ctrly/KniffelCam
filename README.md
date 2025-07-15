@@ -45,8 +45,8 @@ This can fail if a single digit has a gap in it's contour and is then split in h
 ### 5. Infer the digit (`prepareDigitImages()`, `preprocessForMNIST()`, `predictDigitMNIST()`)
 The contours of each digit are placed in the middle of a black (28x28) rectangular background so that it resembles the MNIST training data as much as possible. The image is then fed to a pretrained 8 layer convolutional neural network (The model architecture and training process is simply copied from the [TensorFlow.js examples](https://github.com/tensorflow/tfjs-examples/tree/master/mnist))
 The output of the model is not very accurate (at least on my handwriting) so a step of... let's call it [*predicitve processing*](https://en.wikipedia.org/wiki/Predictive_coding) is added, which tries to correct the inference output based on hardcoded assumptions:
- - If it's the first of two digits and the model predicts a 7 we assume that it's actually a 1
- - If the model outputs a 1 but it's not the "1"s field (the only field where a value of 1 is possible), then we assume it's a "/" (i.e. a value of 0)
+ - If it's the first of two digits and the model predicts a 7 we assume that it's actually a 1 (The highest possible value is 50)
+ - If the model outputs a 1 but it's not in the "1"s field (the only field where a value of 1 is possible), then we assume it's a "/" (i.e. a value of 0)
  - If it's a field that has a predetermined value (e.g. 25 for Full-House) we always assume that it's this value (if we've not already determined that it must be a "/").
 
 A function for OCR with Tesseract is currently disabled since I've found the results to be significantly worse and slower.
